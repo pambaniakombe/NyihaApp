@@ -29,13 +29,18 @@ flutter run --dart-define=API_BASE_URL=http://127.0.0.1:3000
 
 ### Railway Postgres: create tables (Prisma migrate)
 
-From the repo root, after `railway link` → your project → environment → **Postgres** service:
+`railway run` uses an internal hostname (`postgres.railway.internal`) that **does not work from your PC**. Use the **public** connection string from **Railway → Postgres → Connect** (host like `*.proxy.rlwy.net`).
+
+1. Copy `backend/env.railway.example` → `backend/.env.railway` and paste your **public** `DATABASE_URL`.
+2. From the repo root:
 
 ```bash
 ./scripts/railway-migrate.sh
 ```
 
-That runs `prisma migrate deploy` with Railway’s `DATABASE_URL` and applies everything under `backend/prisma/migrations/`. Optional seed (admin user + demo data): `./scripts/railway-migrate.sh seed`.
+Optional seed (admin user + demo data): `./scripts/railway-migrate.sh seed`.
+
+Migrations also run automatically when the API service starts (`prisma migrate deploy` in deploy), once `DATABASE_URL` is set **on that service** in Railway.
 
 ## Project layout
 
@@ -44,6 +49,7 @@ That runs `prisma migrate deploy` with Railway’s `DATABASE_URL` and applies ev
 - `lib/providers/` — app state (user, messages, polls, theme)
 - `lib/screens/` — splash, onboarding, auth, main shell + tabs
 - `lib/config/api_config.dart` — production API base URL (`kApiBaseUrl`) for HTTP client wiring
+- `scripts/railway-migrate.sh` — run Prisma migrations against linked Railway Postgres
 - `backend/` — Node.js API (Express + Prisma + PostgreSQL). The repo root `package.json` uses **npm workspaces** so [Railway](https://railway.com) Railpack can detect Node without setting a subfolder: **Build** = `npm run build`, **Start** = `npm start` (runs migrations then the server). Add a **PostgreSQL** plugin for `DATABASE_URL`, set **`JWT_SECRET`**, and see `backend/.env.example`. (You can still set **Root Directory** to `backend` instead if you prefer.)
 
 The standalone admin Flutter app lives in a separate checkout (`admins/`); it is **not** included in this repository.
