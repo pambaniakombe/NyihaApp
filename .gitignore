@@ -47,7 +47,8 @@ app.*.map.json
 # Admin Flutter app (deploy separately; not included in this repo)
 /admins/
 
-# Node backend (see also backend/.gitignore)
+# Node (root workspace + backend)
+/node_modules/
 backend/node_modules/
 backend/dist/
 backend/.env

@@ -1,0 +1,13 @@
+{
+  "name": "nyiha-monorepo",
+  "private": true,
+  "description": "Nyiha member app (Flutter) + API (backend/). Railway: npm run build / npm start build the Node workspace.",
+  "workspaces": ["backend"],
+  "scripts": {
+    "build": "npm run build --workspace=nyiha-society-api",
+    "start": "npm run start:deploy --workspace=nyiha-society-api"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

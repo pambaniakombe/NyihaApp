@@ -20,7 +20,7 @@ flutter run
 - `lib/widgets/` — glass cards, kente strip, gold buttons, toast
 - `lib/providers/` — app state (user, messages, polls, theme)
 - `lib/screens/` — splash, onboarding, auth, main shell + tabs
-- `backend/` — Node.js API (Express + Prisma + PostgreSQL). Deploy on [Railway](https://railway.com): set the service **Root Directory** to `backend`, add a Postgres plugin, and configure `JWT_SECRET` / `DATABASE_URL` (see `backend/.env.example`).
+- `backend/` — Node.js API (Express + Prisma + PostgreSQL). The repo root `package.json` uses **npm workspaces** so [Railway](https://railway.com) Railpack can detect Node without setting a subfolder: **Build** = `npm run build`, **Start** = `npm start` (runs migrations then the server). Add a **PostgreSQL** plugin for `DATABASE_URL`, set **`JWT_SECRET`**, and see `backend/.env.example`. (You can still set **Root Directory** to `backend` instead if you prefer.)
 
 The standalone admin Flutter app lives in a separate checkout (`admins/`); it is **not** included in this repository.
 
