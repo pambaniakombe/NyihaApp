@@ -27,6 +27,16 @@ Flutter reads the default base URL from `lib/config/api_config.dart`. For a loca
 flutter run --dart-define=API_BASE_URL=http://127.0.0.1:3000
 ```
 
+### Railway Postgres: create tables (Prisma migrate)
+
+From the repo root, after `railway link` → your project → environment → **Postgres** service:
+
+```bash
+./scripts/railway-migrate.sh
+```
+
+That runs `prisma migrate deploy` with Railway’s `DATABASE_URL` and applies everything under `backend/prisma/migrations/`. Optional seed (admin user + demo data): `./scripts/railway-migrate.sh seed`.
+
 ## Project layout
 
 - `lib/theme/` — colors and typography from the HTML design
