@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 import '../data/mock_data.dart';
 import '../models/admin_models.dart';
 import '../models/models.dart';
+import '../services/nyiha_api.dart';
 
 enum AppScreen {
   splash,
@@ -13,6 +17,7 @@ enum AppScreen {
   terms,
   payment,
   login,
+  resetPassword,
   main,
   pendingApproval,
   adminLogin,
@@ -20,6 +25,19 @@ enum AppScreen {
 }
 
 class AppState extends ChangeNotifier {
+  static const _kMemberJwt = 'nyiha_member_jwt';
+  static const _kAdminJwt = 'nyiha_admin_jwt';
+  static const FlutterSecureStorage _secure = FlutterSecureStorage();
+
+  /// After failed API call (register / login).
+  String? lastApiError;
+
+  /// Member JWT from API (`null` = guest / demo until login).
+  String? memberJwt;
+
+  /// Admin JWT when using API auth.
+  String? adminJwt;
+
   AppScreen screen = AppScreen.splash;
   int onboardStep = 0;
   int regStep = 1;
@@ -34,8 +52,8 @@ class AppState extends ChangeNotifier {
   final List<AdminAccount> adminTeam = [
     AdminAccount(
       id: 'adm-main',
-      displayName: 'Mkuu wa Wasimamizi',
-      email: 'mkuu@nyiha.app',
+      displayName: 'Adam Administrator',
+      email: 'adamadministrator@nyiha.app',
       role: AdminRole.main,
       pin: '0000',
       linkedMemberPhone: '+255712345678',
@@ -88,18 +106,19 @@ class AppState extends ChangeNotifier {
   NyihaUser user = NyihaUser(
     name: 'Lulez Mtemi',
     phone: '+255712345678',
+    email: '',
     location: 'Dar es Salaam',
     children: 2,
     status: 'Approved',
     ticksPaid: 12,
     balance: 2000,
     username: 'lulez_nyiha',
+    avatarUrl: null,
   );
 
-  /// Target tiki for the year (Mkeka).
-  static const int ticksRequiredAnnual = 24;
-  /// TZS per tiki (demo).
-  static const int tickPriceTzs = 2000;
+  /// Target tiki / bei (updated from `/settings` and `/me`).
+  int ticksRequiredAnnualSetting = 24;
+  int tickPriceTzsSetting = 2000;
 
   PendingTickPayment? pendingTickPayment;
 
@@ -110,6 +129,11 @@ class AppState extends ChangeNotifier {
   final List<ChatMsg> messagesSeller = [];
 
   final Random _rng = Random();
+  Timer? _autoRefreshTimer;
+  DateTime? _lastCatalogRefreshAt;
+  DateTime? _lastMembersRefreshAt;
+  DateTime? _lastChatsRefreshAt;
+  bool _refreshInFlight = false;
 
   late List<MockPoll> polls;
 
@@ -271,10 +295,11 @@ class AppState extends ChangeNotifier {
     return false;
   }
 
-  void logoutAdmin() {
+  Future<void> logoutAdmin() async {
     adminSession = null;
     adminShellIndex = 0;
-    notifyListeners();
+    await saveAdminJwt(null);
+    _stopAutoRefresh();
   }
 
   /// Main admin only: add a helper until 3 admins total.
@@ -337,6 +362,14 @@ class AppState extends ChangeNotifier {
     return false;
   }
 
+  /// Member (when allowed) or logged-in admin — drives [CommunityChatComposer] `canPost`.
+  bool get canSendJamiiComposer =>
+      (adminJwt != null && adminJwt!.isNotEmpty && adminSession != null) ||
+      canCurrentUserPostCommunityChat;
+
+  /// Same gate for uploads (image/voice).
+  bool get canPostCommunityMedia => canSendJamiiComposer;
+
   void setJamiiCommunityChatMembersCanSend(bool value) {
     jamiiCommunityChatMembersCanSend = value;
     notifyListeners();
@@ -350,6 +383,68 @@ class AppState extends ChangeNotifier {
         return;
       }
     }
+  }
+
+  MemberStatus _memberStatusFromApi(String? s) {
+    switch (s?.toLowerCase()) {
+      case 'approved':
+        return MemberStatus.approved;
+      case 'pending':
+        return MemberStatus.pending;
+      case 'suspended':
+        return MemberStatus.suspended;
+      default:
+        return MemberStatus.pending;
+    }
+  }
+
+  /// Update member ticks, status, admin notes / warning; persists to API and [managedMembers].
+  Future<bool> patchManagedMemberApi(
+    ManagedMember member, {
+    MemberStatus? status,
+    int? ticks,
+    int? balanceTzs,
+    String? adminProfileNote,
+    String? adminWarning,
+  }) async {
+    final tok = adminJwt;
+    final id = member.id;
+    if (tok == null || tok.isEmpty || id == null || id.isEmpty) return false;
+    final body = <String, dynamic>{};
+    if (status != null) {
+      body['status'] = switch (status) {
+        MemberStatus.approved => 'approved',
+        MemberStatus.pending => 'pending',
+        MemberStatus.suspended => 'suspended',
+      };
+    }
+    if (ticks != null) body['ticksPaid'] = ticks;
+    if (balanceTzs != null) body['balance'] = balanceTzs;
+    if (adminProfileNote != null) body['adminProfileNote'] = adminProfileNote;
+    if (adminWarning != null) body['adminWarning'] = adminWarning;
+    if (body.isEmpty) return false;
+    try {
+      final j = await NyihaApi.patch('/admin/members/$id', body, bearer: tok);
+      if (j['status'] != null) {
+        member.status = _memberStatusFromApi(j['status']?.toString());
+      }
+      final tp = j['ticksPaid'] ?? j['ticks'];
+      if (tp is num) member.ticks = tp.toInt();
+      final bal = j['balance'];
+      if (bal is num) member.balanceTzs = bal.toInt();
+      member.adminProfileNote = j['adminProfileNote']?.toString() ?? member.adminProfileNote;
+      member.adminWarning = j['adminWarning']?.toString() ?? member.adminWarning;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> setManagedMemberStatusApi(ManagedMember member, MemberStatus status) {
+    return patchManagedMemberApi(member, status: status);
   }
 
   void broadcastAdminNotice(String text) {
@@ -368,6 +463,29 @@ class AppState extends ChangeNotifier {
       ),
     );
     notifyListeners();
+  }
+
+  Future<bool> adminSendCommunityMessageApi(String text) async {
+    final tok = adminJwt;
+    if (tok == null || tok.isEmpty) return false;
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return false;
+    final now = DateTime.now();
+    final time = '${now.hour}:${now.minute.toString().padLeft(2, '0')}';
+    try {
+      await NyihaApi.post('/admin/chat/community', {
+        'text': trimmed,
+        'timeLabel': time,
+        'emoji': '🛡️',
+        'mediaKind': 'text',
+      }, bearer: tok);
+      await fetchCommunityChatsApi();
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    }
   }
 
   void adminRejectPendingTickPayment() {
@@ -617,6 +735,9 @@ class AppState extends ChangeNotifier {
 
   void setScreen(AppScreen s) {
     screen = s;
+    if (s == AppScreen.main || s == AppScreen.pendingApproval || s == AppScreen.adminMain) {
+      _startAutoRefresh();
+    }
     notifyListeners();
   }
 
@@ -663,53 +784,272 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void sendCommunityMessage(String text) {
-    if (!canCurrentUserPostCommunityChat) return;
+  Future<bool> sendCommunityMessage(String text) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
+    if (trimmed.isEmpty) return false;
+    if (adminJwt != null && adminJwt!.isNotEmpty) {
+      return adminSendCommunityMessageApi(trimmed);
+    }
+    if (!canCurrentUserPostCommunityChat) return false;
     final now = DateTime.now();
     final time = '${now.hour}:${now.minute.toString().padLeft(2, '0')}';
-    messagesCommunity.add(
-      ChatMsg(from: 'You', text: trimmed, time: time, me: true, kind: ChatMediaKind.text),
-    );
-    notifyListeners();
+    final tok = memberJwt;
+    if (tok == null || tok.isEmpty) return false;
+    try {
+      await NyihaApi.post('/chat/community', {
+        'fromLabel': user.name,
+        'text': trimmed,
+        'timeLabel': time,
+        'emoji': '👤',
+        'mediaKind': 'text',
+      }, bearer: tok);
+      await fetchCommunityChatsApi();
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    }
   }
 
-  void sendCommunityImage(Uint8List bytes, {String caption = ''}) {
-    if (!canCurrentUserPostCommunityChat) return;
-    if (bytes.isEmpty) return;
-    final now = DateTime.now();
-    final time = '${now.hour}:${now.minute.toString().padLeft(2, '0')}';
-    messagesCommunity.add(
-      ChatMsg(
-        from: 'You',
-        text: caption.trim(),
-        time: time,
-        me: true,
-        kind: ChatMediaKind.image,
-        imageBytes: bytes,
-      ),
-    );
-    notifyListeners();
+  Future<bool> fetchManagedMembersApi() async {
+    final tok = adminJwt;
+    if (tok == null || tok.isEmpty) return false;
+    try {
+      final rows = await NyihaApi.getList('/admin/members', bearer: tok);
+      managedMembers
+        ..clear()
+        ..addAll(
+          rows.whereType<Map<String, dynamic>>().map((m) {
+            final statusRaw = (m['status']?.toString() ?? 'pending').toLowerCase();
+            final status = switch (statusRaw) {
+              'approved' => MemberStatus.approved,
+              'suspended' => MemberStatus.suspended,
+              _ => MemberStatus.pending,
+            };
+            return ManagedMember(
+              id: m['id']?.toString(),
+              name: m['name']?.toString() ?? '',
+              phone: m['phone']?.toString() ?? '',
+              location: m['location']?.toString() ?? '',
+              ticks: (m['ticksPaid'] is num) ? (m['ticksPaid'] as num).toInt() : 0,
+              emoji: m['emoji']?.toString() ?? '👤',
+              status: status,
+              adminProfileNote: m['adminProfileNote']?.toString() ?? '',
+              adminWarning: m['adminWarning']?.toString() ?? '',
+              balanceTzs: (m['balance'] is num) ? (m['balance'] as num).toInt() : 0,
+            );
+          }).where((x) => x.name.isNotEmpty),
+        );
+      notifyListeners();
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    }
   }
 
-  void sendCommunityVoice({required String filePath, required int durationSec}) {
-    if (!canCurrentUserPostCommunityChat) return;
-    if (durationSec < 1 || filePath.isEmpty) return;
+  Future<bool> fetchMemberDirectoryApi() async {
+    final tok = memberJwt;
+    if (tok == null || tok.isEmpty) return false;
+    try {
+      final rows = await NyihaApi.getList('/member/members', bearer: tok);
+      managedMembers
+        ..clear()
+        ..addAll(
+          rows.whereType<Map<String, dynamic>>().map((m) {
+            final statusRaw = (m['status']?.toString() ?? 'pending').toLowerCase();
+            final status = switch (statusRaw) {
+              'approved' => MemberStatus.approved,
+              'suspended' => MemberStatus.suspended,
+              _ => MemberStatus.pending,
+            };
+            return ManagedMember(
+              id: m['id']?.toString(),
+              name: m['name']?.toString() ?? '',
+              phone: m['phone']?.toString() ?? '',
+              location: m['location']?.toString() ?? '',
+              ticks: (m['ticksPaid'] is num) ? (m['ticksPaid'] as num).toInt() : 0,
+              emoji: '👤',
+              status: status,
+              adminProfileNote: '',
+              adminWarning: '',
+              balanceTzs: 0,
+            );
+          }).where((x) => x.name.isNotEmpty),
+        );
+      notifyListeners();
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  bool profileAvatarUploading = false;
+
+  /// `POST /me/avatar` then refresh profile and community chat so avatars match.
+  Future<bool> uploadMemberAvatar(Uint8List bytes, {String filename = 'avatar.jpg'}) async {
+    final tok = memberJwt;
+    if (tok == null || tok.isEmpty) return false;
+    if (bytes.isEmpty) return false;
+    profileAvatarUploading = true;
+    notifyListeners();
+    try {
+      await NyihaApi.uploadMemberAvatar(bytes: bytes, filename: filename, bearer: tok);
+      final me = await NyihaApi.getMap('/me', bearer: tok);
+      _applyUserJson(me);
+      lastApiError = null;
+      await fetchCommunityChatsApi();
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    } finally {
+      profileAvatarUploading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> fetchCommunityChatsApi() async {
+    final tok = memberJwt ?? adminJwt;
+    if (tok == null || tok.isEmpty) return false;
+    try {
+      final rows = await NyihaApi.getList('/chat/community?limit=200', bearer: tok);
+      messagesCommunity
+        ..clear()
+        ..addAll(
+          rows.whereType<Map<String, dynamic>>().map((m) {
+            final kind = _parseChatMediaKind(m['mediaKind']);
+            return ChatMsg(
+              from: m['fromLabel']?.toString() ?? 'Unknown',
+              text: m['text']?.toString() ?? '',
+              time: m['timeLabel']?.toString() ?? '',
+              me: _communityMsgIsFromViewer(m),
+              emoji: m['emoji']?.toString(),
+              kind: kind,
+              imageUrl: m['imageUrl']?.toString(),
+              voiceUrl: m['voiceUrl']?.toString(),
+              voiceDurationSec: (m['voiceDurationSec'] is num) ? (m['voiceDurationSec'] as num).toInt() : null,
+              avatarUrl: m['avatarUrl']?.toString(),
+            );
+          }),
+        );
+      notifyListeners();
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  ChatMediaKind _parseChatMediaKind(dynamic v) {
+    final s = v?.toString().toLowerCase();
+    if (s == 'image') return ChatMediaKind.image;
+    if (s == 'voice') return ChatMediaKind.voice;
+    return ChatMediaKind.text;
+  }
+
+  bool _communityMsgIsFromViewer(Map<String, dynamic> m) {
+    if (memberJwt != null && memberJwt!.isNotEmpty) {
+      return m['isFromMe'] == true;
+    }
+    if (adminJwt != null && adminSession != null) {
+      final label = m['fromLabel']?.toString() ?? '';
+      return label == adminSession!.displayName;
+    }
+    return false;
+  }
+
+  Future<bool> sendCommunityImage(Uint8List bytes, {String caption = ''}) async {
+    if (!canPostCommunityMedia) return false;
+    if (bytes.isEmpty) return false;
     final now = DateTime.now();
     final time = '${now.hour}:${now.minute.toString().padLeft(2, '0')}';
-    messagesCommunity.add(
-      ChatMsg(
-        from: 'You',
-        text: '',
-        time: time,
-        me: true,
-        kind: ChatMediaKind.voice,
-        voiceFilePath: filePath,
-        voiceDurationSec: durationSec,
-      ),
-    );
-    notifyListeners();
+    final cap = caption.trim();
+    final tok = memberJwt ?? adminJwt;
+    if (tok == null || tok.isEmpty) return false;
+    try {
+      final storedPath = await NyihaApi.uploadChatBytes(
+        bytes: bytes,
+        filename: 'chat_${now.millisecondsSinceEpoch}.jpg',
+        bearer: tok,
+      );
+      if (storedPath == null || storedPath.isEmpty) return false;
+
+      if (adminJwt != null && adminJwt!.isNotEmpty) {
+        await NyihaApi.post('/admin/chat/community', {
+          'text': cap,
+          'timeLabel': time,
+          'emoji': '🛡️',
+          'mediaKind': 'image',
+          'imageUrl': storedPath,
+        }, bearer: adminJwt);
+      } else {
+        await NyihaApi.post('/chat/community', {
+          'fromLabel': user.name,
+          'text': cap,
+          'timeLabel': time,
+          'emoji': '👤',
+          'mediaKind': 'image',
+          'imageUrl': storedPath,
+        }, bearer: memberJwt);
+      }
+      await fetchCommunityChatsApi();
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> sendCommunityVoice({required String filePath, required int durationSec}) async {
+    if (!canPostCommunityMedia) return false;
+    if (durationSec < 1 || filePath.isEmpty) return false;
+    final now = DateTime.now();
+    final time = '${now.hour}:${now.minute.toString().padLeft(2, '0')}';
+    final tok = memberJwt ?? adminJwt;
+    if (tok == null || tok.isEmpty) return false;
+    try {
+      final storedPath = await NyihaApi.uploadChatFilePath(
+        path: filePath,
+        filename: 'voice_${now.millisecondsSinceEpoch}.m4a',
+        bearer: tok,
+      );
+      if (storedPath == null || storedPath.isEmpty) return false;
+
+      if (adminJwt != null && adminJwt!.isNotEmpty) {
+        await NyihaApi.post('/admin/chat/community', {
+          'text': '',
+          'timeLabel': time,
+          'emoji': '🛡️',
+          'mediaKind': 'voice',
+          'voiceUrl': storedPath,
+          'voiceDurationSec': durationSec,
+        }, bearer: adminJwt);
+      } else {
+        await NyihaApi.post('/chat/community', {
+          'fromLabel': user.name,
+          'text': '',
+          'timeLabel': time,
+          'emoji': '👤',
+          'mediaKind': 'voice',
+          'voiceUrl': storedPath,
+          'voiceDurationSec': durationSec,
+        }, bearer: memberJwt);
+      }
+      await fetchCommunityChatsApi();
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    }
   }
 
   /// Wanachama DM — keyed by member full name ([MockMember.name]).
@@ -800,6 +1140,7 @@ class AppState extends ChangeNotifier {
   void applyRegistrationToUser() {
     user.name = regData['r-name'] ?? user.name;
     user.phone = regData['r-phone'] ?? user.phone;
+    user.email = regData['r-email'] ?? user.email;
     user.location = regData['r-location'] ?? user.location;
     user.username = regData['r-username'] ?? user.username;
     final cc = int.tryParse(regData['r-children'] ?? '');
@@ -852,6 +1193,10 @@ class AppState extends ChangeNotifier {
   }
 
   void approveSignupRequest(String requestId) {
+    if (adminJwt != null && adminJwt!.isNotEmpty) {
+      approveSignupRequestApi(requestId);
+      return;
+    }
     final idx = pendingSignupRequests.indexWhere((r) => r.id == requestId);
     if (idx < 0) return;
     final r = pendingSignupRequests.removeAt(idx);
@@ -885,6 +1230,10 @@ class AppState extends ChangeNotifier {
   }
 
   void rejectSignupRequest(String requestId) {
+    if (adminJwt != null && adminJwt!.isNotEmpty) {
+      rejectSignupRequestApi(requestId);
+      return;
+    }
     final idx = pendingSignupRequests.indexWhere((r) => r.id == requestId);
     if (idx < 0) return;
     pendingSignupRequests.removeAt(idx);
@@ -912,7 +1261,7 @@ class AppState extends ChangeNotifier {
   }
 
   int get ticksOwedAnnual =>
-      (ticksRequiredAnnual - user.ticksPaid).clamp(0, ticksRequiredAnnual);
+      (ticksRequiredAnnualSetting - user.ticksPaid).clamp(0, ticksRequiredAnnualSetting);
 
   /// Starts payment request (M-Pesa etc.); blocks if one is already in flight.
   bool submitTickPaymentRequest(int tickCount) {
@@ -931,7 +1280,7 @@ class AppState extends ChangeNotifier {
       ChatMsg(
         from: 'Malipo',
         text:
-            'Ombi la malipo: ${user.name} anaomba kulipa tiki $tickCount (TZS ${tickCount * tickPriceTzs}). Nambari: ${pendingTickPayment!.id}. Hali: inasubiri malipo.',
+            'Ombi la malipo: ${user.name} anaomba kulipa tiki $tickCount (TZS ${tickCount * tickPriceTzsSetting}). Nambari: ${pendingTickPayment!.id}. Hali: inasubiri malipo.',
         time: time,
         me: false,
         emoji: '💳',
@@ -976,7 +1325,7 @@ class AppState extends ChangeNotifier {
       ChatMsg(
         from: 'Admin',
         text:
-            'Malipo ya tiki $n yameidhinishwa. ${user.name} sasa ana tiki ${user.ticksPaid} kati ya $ticksRequiredAnnual.',
+            'Malipo ya tiki $n yameidhinishwa. ${user.name} sasa ana tiki ${user.ticksPaid} kati ya $ticksRequiredAnnualSetting.',
         time: time,
         me: false,
         emoji: '⚡',
@@ -1028,5 +1377,453 @@ class AppState extends ChangeNotifier {
       ),
     );
     notifyListeners();
+  }
+
+  // —— API (Railway backend) ——
+
+  Future<void> saveMemberJwt(String? jwt) async {
+    memberJwt = jwt;
+    if (jwt == null || jwt.isEmpty) {
+      await _secure.delete(key: _kMemberJwt);
+    } else {
+      await _secure.write(key: _kMemberJwt, value: jwt);
+    }
+    notifyListeners();
+  }
+
+  Future<void> saveAdminJwt(String? jwt) async {
+    adminJwt = jwt;
+    if (jwt == null || jwt.isEmpty) {
+      await _secure.delete(key: _kAdminJwt);
+    } else {
+      await _secure.write(key: _kAdminJwt, value: jwt);
+    }
+    notifyListeners();
+  }
+
+  /// Splash / cold start: restore session and catalog, or go onboarding / login.
+  Future<void> bootstrapSession() async {
+    lastApiError = null;
+    memberJwt = await _secure.read(key: _kMemberJwt);
+    if (memberJwt == null || memberJwt!.isEmpty) {
+      setScreen(AppScreen.onboarding);
+      return;
+    }
+    try {
+      final me = await NyihaApi.getMap('/me', bearer: memberJwt);
+      _applyUserJson(me);
+      setScreen(isMemberApproved ? AppScreen.main : AppScreen.pendingApproval);
+      unawaited(triggerFastRefresh(force: true));
+    } catch (_) {
+      await saveMemberJwt(null);
+      setScreen(AppScreen.login);
+    }
+  }
+
+  void _applyUserJson(Map<String, dynamic> j) {
+    user.name = j['name']?.toString() ?? user.name;
+    user.phone = j['phone']?.toString() ?? user.phone;
+    final av = j['avatarUrl']?.toString();
+    user.avatarUrl = (av != null && av.trim().isNotEmpty) ? av.trim() : null;
+    user.email = j['email']?.toString() ?? user.email;
+    user.location = j['location']?.toString() ?? user.location;
+    user.children = (j['children'] is num) ? (j['children'] as num).toInt() : user.children;
+    user.status = j['status']?.toString() ?? user.status;
+    user.ticksPaid = (j['ticksPaid'] is num) ? (j['ticksPaid'] as num).toInt() : user.ticksPaid;
+    user.balance = (j['balance'] is num) ? (j['balance'] as num).toInt() : user.balance;
+    user.username = j['username']?.toString() ?? user.username;
+    user.adminProfileNote = j['adminProfileNote']?.toString() ?? '';
+    user.adminWarning = j['adminWarning']?.toString() ?? '';
+    if (j['ticksRequiredAnnual'] is num) {
+      ticksRequiredAnnualSetting = (j['ticksRequiredAnnual'] as num).toInt();
+    }
+    if (j['tickPriceTzs'] is num) {
+      tickPriceTzsSetting = (j['tickPriceTzs'] as num).toInt();
+    }
+    notifyListeners();
+  }
+
+  Future<bool> registerWithApi() async {
+    lastApiError = null;
+    final email = regData['r-email']?.trim() ?? '';
+    final pass = regData['r-pass'] ?? '';
+    if (email.isEmpty || !email.contains('@')) {
+      lastApiError = 'Weka barua pepe halali.';
+      notifyListeners();
+      return false;
+    }
+    if (pass.length < 8) {
+      lastApiError = 'Nenosiri lazima liwe angalau herufi 8.';
+      notifyListeners();
+      return false;
+    }
+    final detail = StringBuffer()
+      ..writeln('Baba: ${regData['r-father'] ?? ''}')
+      ..writeln('Mama: ${regData['r-mother'] ?? ''}')
+      ..writeln('Jamaa: ${regData['r-relatives'] ?? ''}')
+      ..writeln('Rufaa: ${regData['r-referral'] ?? ''}');
+    try {
+      final body = <String, dynamic>{
+        'name': regData['r-name'] ?? '',
+        'email': email,
+        'phone': regData['r-phone'] ?? '',
+        'location': regData['r-location'] ?? '',
+        'children': int.tryParse(regData['r-children'] ?? '0') ?? 0,
+        'username': regData['r-username'] ?? '',
+        'password': pass,
+        'detailLines': detail.toString(),
+      };
+      final res = await NyihaApi.post('/auth/register', body);
+      final tok = res['token']?.toString();
+      if (tok == null || tok.isEmpty) {
+        lastApiError = 'Jibu la seva silinganifu.';
+        notifyListeners();
+        return false;
+      }
+      await saveMemberJwt(tok);
+      final u = res['user'];
+      if (u is Map<String, dynamic>) _applyUserJson(u);
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  String _formatApiError(Object e) {
+    if (e is ApiException) return e.message;
+    return e.toString();
+  }
+
+  Future<bool> loginMemberApi(String identifier, String password) async {
+    lastApiError = null;
+    try {
+      final id = identifier.trim();
+      final idLower = id.toLowerCase();
+      final res = await NyihaApi.post('/auth/login', {
+        // Support both current and legacy backend contracts.
+        'identifier': id,
+        'phone': id,
+        'email': idLower,
+        'username': idLower,
+        'password': password,
+      });
+      final tok = res['token']?.toString();
+      if (tok == null || tok.isEmpty) return false;
+      await saveMemberJwt(tok);
+      final u = res['user'];
+      if (u is Map<String, dynamic>) _applyUserJson(u);
+      _startAutoRefresh();
+      unawaited(triggerFastRefresh(force: true));
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> requestPasswordResetEmail(String email) async {
+    lastApiError = null;
+    try {
+      await NyihaApi.post('/auth/forgot-password', {'email': email.trim().toLowerCase()});
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> resetPasswordWithToken(String token, String newPassword) async {
+    lastApiError = null;
+    try {
+      await NyihaApi.post('/auth/reset-password', {
+        'token': token.trim(),
+        'newPassword': newPassword,
+      });
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> loginAdminApi(String email, String password) async {
+    lastApiError = null;
+    try {
+      final normalizedEmail = email.trim().toLowerCase();
+      final res = await NyihaApi.post('/auth/admin/login', {
+        // Keep compatibility with older backend payload contracts.
+        'email': normalizedEmail,
+        'identifier': normalizedEmail,
+        'pin': password,
+        'password': password,
+      });
+      final tok = res['token']?.toString();
+      final adm = res['admin'];
+      if (tok == null || adm is! Map<String, dynamic>) return false;
+      await saveAdminJwt(tok);
+      final roleStr = adm['role']?.toString() ?? 'helper';
+      adminSession = AdminAccount(
+        id: adm['id']?.toString() ?? 'adm',
+        displayName: adm['displayName']?.toString() ?? 'Admin',
+        email: adm['email']?.toString() ?? email,
+        role: roleStr == 'main' ? AdminRole.main : AdminRole.helper,
+        pin: '',
+        linkedMemberPhone: adm['linkedMemberPhone']?.toString(),
+      );
+      _startAutoRefresh();
+      unawaited(Future.wait([
+        fetchPendingSignupsApi(),
+        fetchManagedMembersApi(),
+        fetchCommunityChatsApi(),
+      ]));
+      notifyListeners();
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> fetchPendingSignupsApi() async {
+    final tok = adminJwt;
+    if (tok == null || tok.isEmpty) return false;
+    try {
+      final list = await NyihaApi.getList('/admin/signups/pending', bearer: tok);
+      pendingSignupRequests
+        ..clear()
+        ..addAll(
+          list.whereType<Map<String, dynamic>>().map((m) {
+            final submittedAtRaw = m['submittedAt']?.toString();
+            final submittedAt = submittedAtRaw == null
+                ? DateTime.now()
+                : DateTime.tryParse(submittedAtRaw) ?? DateTime.now();
+            return PendingSignupRequest(
+              id: m['id']?.toString() ?? '',
+              fullName: m['fullName']?.toString() ?? '',
+              phone: m['phone']?.toString() ?? '',
+              location: m['location']?.toString() ?? '',
+              username: m['username']?.toString() ?? '',
+              children: (m['children'] is num) ? (m['children'] as num).toInt() : 0,
+              submittedAt: submittedAt,
+              registrationFeePaid: m['registrationFeePaid'] as bool? ?? false,
+              detailLines: m['detailLines']?.toString() ?? '',
+            );
+          }).where((x) => x.id.isNotEmpty),
+        );
+      notifyListeners();
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> approveSignupRequestApi(String requestId) async {
+    final tok = adminJwt;
+    if (tok == null || tok.isEmpty) return false;
+    try {
+      await NyihaApi.post('/admin/signups/$requestId/approve', const {}, bearer: tok);
+      pendingSignupRequests.removeWhere((r) => r.id == requestId);
+      await fetchManagedMembersApi();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> rejectSignupRequestApi(String requestId) async {
+    final tok = adminJwt;
+    if (tok == null || tok.isEmpty) return false;
+    try {
+      await NyihaApi.post('/admin/signups/$requestId/reject', const {}, bearer: tok);
+      pendingSignupRequests.removeWhere((r) => r.id == requestId);
+      await fetchManagedMembersApi();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      lastApiError = _formatApiError(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> logoutMember() async {
+    await saveMemberJwt(null);
+    _stopAutoRefresh();
+    notifyListeners();
+  }
+
+  Future<void> refreshRemoteCatalog() async {
+    final b = memberJwt;
+    if (b != null && b.isNotEmpty) {
+      try {
+        final me = await NyihaApi.getMap('/me', bearer: b);
+        _applyUserJson(me);
+      } catch (_) {
+        /* keep profile if /me fails transiently */
+      }
+    }
+    try {
+      final proms = await Future.wait([
+        NyihaApi.getList('/products', bearer: b),
+        NyihaApi.getList('/posts', bearer: b),
+        NyihaApi.getList('/events', bearer: b),
+        NyihaApi.getMap('/settings', bearer: b),
+      ]);
+      final plist = proms[0] as List<dynamic>;
+      final postlist = proms[1] as List<dynamic>;
+      final evlist = proms[2] as List<dynamic>;
+      final settings = proms[3] as Map<String, dynamic>;
+
+      dukaProducts = plist.map((raw) {
+        final m = raw as Map<String, dynamic>;
+        final c = (m['color'] is num) ? (m['color'] as num).toInt() : 0xffd4a017;
+        return MockProduct(
+          apiId: m['id']?.toString(),
+          name: m['name']?.toString() ?? '',
+          priceLabel: m['priceLabel']?.toString() ?? '',
+          emoji: m['emoji']?.toString() ?? '🛍️',
+          color: c,
+          imageUrl: m['imageUrl']?.toString() ?? '',
+        );
+      }).toList();
+
+      matangazoPosts = postlist.map((raw) {
+        final m = raw as Map<String, dynamic>;
+        final urls = m['imageUrls'];
+        final list = <String>[];
+        if (urls is List) {
+          for (final u in urls) {
+            if (u != null) list.add(u.toString());
+          }
+        }
+        return AdminCommunityPost(
+          id: m['id']?.toString() ?? '',
+          authorLabel: m['authorLabel']?.toString() ?? '',
+          headline: m['headline']?.toString() ?? '',
+          body: m['body']?.toString() ?? '',
+          dateLabel: m['dateLabel']?.toString() ?? '',
+          tag: m['tag']?.toString() ?? '',
+          imageUrls: list,
+        );
+      }).toList();
+
+      jamiiEvents = evlist.map((raw) {
+        final m = raw as Map<String, dynamic>;
+        return MockEvent(
+          title: m['title']?.toString() ?? '',
+          desc: m['desc']?.toString() ?? '',
+          date: m['date']?.toString() ?? '',
+          tag: m['tag']?.toString() ?? '',
+        );
+      }).toList();
+
+      customerCarePhone = settings['customerCarePhone']?.toString() ?? customerCarePhone;
+      customerCareWhatsApp = settings['customerCareWhatsApp']?.toString() ?? customerCareWhatsApp;
+      customerCareHoursLabel = settings['customerCareHoursLabel']?.toString() ?? customerCareHoursLabel;
+      showUserTabHome = settings['showUserTabHome'] as bool? ?? showUserTabHome;
+      showUserTabJamii = settings['showUserTabJamii'] as bool? ?? showUserTabJamii;
+      showUserTabDuka = settings['showUserTabDuka'] as bool? ?? showUserTabDuka;
+      showUserTabProfile = settings['showUserTabProfile'] as bool? ?? showUserTabProfile;
+      showJamiiMazungumzo = settings['showJamiiMazungumzo'] as bool? ?? showJamiiMazungumzo;
+      showJamiiAdminChat = settings['showJamiiAdminChat'] as bool? ?? showJamiiAdminChat;
+      showJamiiWanachama = settings['showJamiiWanachama'] as bool? ?? showJamiiWanachama;
+      showJamiiMatukio = settings['showJamiiMatukio'] as bool? ?? showJamiiMatukio;
+      showJamiiMkeka = settings['showJamiiMkeka'] as bool? ?? showJamiiMkeka;
+      showJamiiKura = settings['showJamiiKura'] as bool? ?? showJamiiKura;
+      jamiiCommunityChatMembersCanSend =
+          settings['jamiiCommunityChatMembersCanSend'] as bool? ?? jamiiCommunityChatMembersCanSend;
+      final tra = settings['ticksRequiredAnnual'];
+      if (tra is num) ticksRequiredAnnualSetting = tra.toInt();
+      final tpr = settings['tickPriceTzs'];
+      if (tpr is num) tickPriceTzsSetting = tpr.toInt();
+
+      notifyListeners();
+      await fetchMemberDirectoryApi();
+      await fetchCommunityChatsApi();
+    } catch (_) {
+      /* keep cached mock data */
+    }
+  }
+
+  void _startAutoRefresh() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+      unawaited(triggerFastRefresh());
+    });
+  }
+
+  void _stopAutoRefresh() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = null;
+  }
+
+  bool _isStale(DateTime? t, Duration maxAge) {
+    if (t == null) return true;
+    return DateTime.now().difference(t) > maxAge;
+  }
+
+  Future<void> triggerFastRefresh({bool force = false}) async {
+    if (_refreshInFlight) return;
+    _refreshInFlight = true;
+    try {
+      final tasks = <Future<void>>[];
+      if (memberJwt != null && memberJwt!.isNotEmpty) {
+        if (force || _isStale(_lastCatalogRefreshAt, const Duration(seconds: 60))) {
+          tasks.add(
+            refreshRemoteCatalog().then((_) {
+              _lastCatalogRefreshAt = DateTime.now();
+            }),
+          );
+        }
+        if (force || _isStale(_lastMembersRefreshAt, const Duration(seconds: 60))) {
+          tasks.add(
+            fetchMemberDirectoryApi().then((ok) {
+              if (ok) _lastMembersRefreshAt = DateTime.now();
+            }),
+          );
+        }
+      }
+      if ((memberJwt != null && memberJwt!.isNotEmpty) || (adminJwt != null && adminJwt!.isNotEmpty)) {
+        if (force || _isStale(_lastChatsRefreshAt, const Duration(seconds: 15))) {
+          tasks.add(
+            fetchCommunityChatsApi().then((ok) {
+              if (ok) _lastChatsRefreshAt = DateTime.now();
+            }),
+          );
+        }
+      }
+      if (adminJwt != null && adminJwt!.isNotEmpty) {
+        if (force || _isStale(_lastMembersRefreshAt, const Duration(seconds: 60))) {
+          tasks.add(
+            fetchManagedMembersApi().then((ok) {
+              if (ok) _lastMembersRefreshAt = DateTime.now();
+            }),
+          );
+        }
+        tasks.add(fetchPendingSignupsApi().then((_) {}));
+      }
+      if (tasks.isNotEmpty) {
+        await Future.wait(tasks);
+      }
+    } finally {
+      _refreshInFlight = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopAutoRefresh();
+    super.dispose();
   }
 }

@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
@@ -18,28 +17,33 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _phone = TextEditingController(text: '+255712345678');
-  final _pass = TextEditingController(text: 'password123');
+  final _identifier = TextEditingController();
+  final _pass = TextEditingController();
   bool _obscure = true;
   bool _busy = false;
 
   @override
   void dispose() {
-    _phone.dispose();
+    _identifier.dispose();
     _pass.dispose();
     super.dispose();
   }
 
   Future<void> _login() async {
-    if (_phone.text.trim().isEmpty || _pass.text.trim().isEmpty) {
-      showNyihaToast(context, 'Jaza sehemu zote.');
+    final id = _identifier.text.trim();
+    if (id.isEmpty || _pass.text.isEmpty) {
+      showNyihaToast(context, 'Jaza nambari ya simu au barua pepe, na nenosiri.');
       return;
     }
     setState(() => _busy = true);
-    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    final app = context.read<AppState>();
+    final ok = await app.loginMemberApi(id, _pass.text);
     if (!mounted) return;
     setState(() => _busy = false);
-    final app = context.read<AppState>();
+    if (!ok) {
+      showNyihaToast(context, app.lastApiError ?? 'Huwezi kuingia kwa sasa.');
+      return;
+    }
     final first = app.user.name.split(' ').first;
     if (app.isMemberApproved) {
       app.setScreen(AppScreen.main);
@@ -56,48 +60,67 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _forgot() {
-    showModalBottomSheet<void>(
+  Future<void> _forgot() async {
+    final emailCtrl = TextEditingController();
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('Nenosiri jipya', style: nyihaCinzel(ctx, size: 20)),
-              const SizedBox(height: 10),
-              Text(
-                'Weka nambari yako ya simu. Utapata SMS ya kubadilisha nenosiri.',
-                style: nyihaNunito(ctx, size: 14, color: NyihaColors.onSurfaceMuted(ctx)),
-              ),
-              const SizedBox(height: 20),
-              TextField(
-                keyboardType: TextInputType.phone,
-                style: nyihaNunito(ctx, color: NyihaColors.onSurface(ctx)),
-                decoration: const InputDecoration(
-                  hintText: '+255 xxx xxx xxx',
-                  prefixIcon: Icon(Icons.phone_rounded, color: NyihaColors.gold),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Nenosiri limesahaulika', style: nyihaCinzel(ctx, size: 20)),
+                const SizedBox(height: 10),
+                Text(
+                  'Weka barua pepe ya akaunti yako. Tutakutumia nenosiri jipya kwenye barua pepe.',
+                  style: nyihaNunito(ctx, size: 14, color: NyihaColors.onSurfaceMuted(ctx)),
                 ),
-              ),
-              const SizedBox(height: 20),
-              BtnGold(
-                label: 'Tuma SMS',
-                icon: Icons.sms_rounded,
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  showNyihaToast(context, 'SMS imetumwa. Angalia simu yako.');
-                },
-              ),
-            ],
+                const SizedBox(height: 20),
+                TextField(
+                  controller: emailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  autofillHints: const [AutofillHints.email],
+                  style: nyihaNunito(ctx, color: NyihaColors.onSurface(ctx)),
+                  decoration: const InputDecoration(
+                    hintText: 'jina@mfano.com',
+                    prefixIcon: Icon(Icons.alternate_email_rounded, color: NyihaColors.gold),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                BtnGold(
+                  label: 'Tuma nenosiri jipya',
+                  icon: Icons.mark_email_read_rounded,
+                  onPressed: () async {
+                    final em = emailCtrl.text.trim();
+                    if (em.isEmpty || !em.contains('@')) {
+                      showNyihaToast(ctx, 'Weka barua pepe halali.');
+                      return;
+                    }
+                    final app = ctx.read<AppState>();
+                    final ok = await app.requestPasswordResetEmail(em);
+                    if (!ctx.mounted) return;
+                    Navigator.pop(ctx);
+                    showNyihaToast(
+                      context,
+                      ok
+                          ? 'Ikiwa barua ipo, tumetuma nenosiri jipya kwa barua pepe.'
+                          : (app.lastApiError ?? 'Hitilafu.'),
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
+    emailCtrl.dispose();
   }
 
   @override
@@ -148,7 +171,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Ingia kwenye akaunti yako',
+                        'Ingia kwa simu au barua pepe',
                         textAlign: TextAlign.center,
                         style: nyihaNunito(context, size: 14, color: NyihaColors.onSurfaceMuted(context)),
                       ),
@@ -159,16 +182,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Text('NAMBARI YA SIMU', style: nyihaFieldLabel(context)),
+                            Text('SIMU AU BARUA PEPE', style: nyihaFieldLabel(context)),
                             const SizedBox(height: 10),
                             TextField(
-                              controller: _phone,
-                              keyboardType: TextInputType.phone,
+                              controller: _identifier,
+                              keyboardType: TextInputType.text,
+                              autofillHints: const [AutofillHints.username],
                               style: nyihaNunito(context, color: NyihaColors.onSurface(context)),
                               decoration: authInputDecoration(
                                 context,
-                                hintText: '+255 xxx xxx xxx',
-                                prefixIcon: Icon(Icons.phone_rounded, color: ax),
+                                hintText: '+255… au jina@barua.com',
+                                prefixIcon: Icon(Icons.person_rounded, color: ax),
                               ),
                             ),
                             const SizedBox(height: 20),
@@ -177,6 +201,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             TextField(
                               controller: _pass,
                               obscureText: _obscure,
+                              autofillHints: const [AutofillHints.password],
                               style: nyihaNunito(context, color: NyihaColors.onSurface(context)),
                               decoration: authInputDecoration(
                                 context,
@@ -199,6 +224,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                   'Umesahau nenosiri?',
                                   style: nyihaNunito(context, size: 13, color: ax),
                                 ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => context.read<AppState>().setScreen(AppScreen.resetPassword),
+                              child: Text(
+                                'Nina token ya zamani — badili nenosiri kwa token',
+                                textAlign: TextAlign.center,
+                                style: nyihaNunito(context, size: 12, color: NyihaColors.onSurfaceMuted(context)),
                               ),
                             ),
                           ],

@@ -7,6 +7,7 @@ import 'register_screen.dart';
 import 'terms_screen.dart';
 import 'payment_screen.dart';
 import 'login_screen.dart';
+import 'reset_password_screen.dart';
 import 'main_shell.dart';
 import 'pending_approval_screen.dart';
 
@@ -30,6 +31,8 @@ class RootShell extends StatelessWidget {
             return const PaymentScreen();
           case AppScreen.login:
             return const LoginScreen();
+          case AppScreen.resetPassword:
+            return const ResetPasswordScreen();
           case AppScreen.main:
             if (!app.isMemberApproved) {
               return const PendingApprovalScreen();

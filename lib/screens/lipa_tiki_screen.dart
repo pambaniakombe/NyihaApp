@@ -29,10 +29,10 @@ class _LipaTikiScreenState extends State<LipaTikiScreen> {
     final app = context.watch<AppState>();
     final u = app.user;
     final first = u.name.split(' ').first;
-    final req = AppState.ticksRequiredAnnual;
+    final req = app.ticksRequiredAnnualSetting;
     final paid = u.ticksPaid;
     final owed = app.ticksOwedAnnual;
-    final price = AppState.tickPriceTzs;
+    final price = app.tickPriceTzsSetting;
     final pending = app.pendingTickPayment;
     final tc2 = NyihaColors.onSurfaceMuted(context);
     final ax = NyihaColors.accent(context);

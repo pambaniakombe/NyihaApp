@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import '../../models/models.dart';
 import '../../providers/app_state.dart' show AppState, AppScreen;
+import '../../services/nyiha_api.dart';
 import '../lipa_tiki_screen.dart';
 import '../../theme/nyiha_colors.dart';
 import '../../theme/nyiha_text.dart';
@@ -10,6 +13,67 @@ import '../../widgets/nyiha_buttons.dart';
 import '../../widgets/nyiha_toast.dart';
 import '../matangazo_screen.dart';
 
+Future<void> _pickProfilePhoto(BuildContext context, AppState app) async {
+  if (app.memberJwt == null || app.memberJwt!.isEmpty) {
+    showNyihaToast(context, 'Ingia ili kubadilisha picha ya profaili.');
+    return;
+  }
+  final picker = ImagePicker();
+  final x = await picker.pickImage(source: ImageSource.gallery, maxWidth: 1600, imageQuality: 88);
+  if (x == null || !context.mounted) return;
+  final bytes = await x.readAsBytes();
+  if (!context.mounted) return;
+  final fn = x.name.toLowerCase();
+  final filename = fn.endsWith('.png')
+      ? x.name
+      : fn.endsWith('.webp')
+          ? x.name
+          : fn.endsWith('.gif')
+              ? x.name
+              : 'avatar.jpg';
+  final ok = await app.uploadMemberAvatar(bytes, filename: filename);
+  if (!context.mounted) return;
+  if (ok) {
+    showNyihaToast(context, 'Picha ya profaili imesasishwa.');
+  } else if (app.lastApiError != null) {
+    showNyihaToast(context, app.lastApiError!);
+  }
+}
+
+Widget _profileAvatarInner(BuildContext context, NyihaUser u, Color ax) {
+  final resolved = NyihaApi.resolveAvatarUrl(u.avatarUrl);
+  if (resolved.isEmpty) {
+    return Container(
+      color: ax.withOpacity(0.22),
+      alignment: Alignment.center,
+      child: const Text('👤', style: TextStyle(fontSize: 40)),
+    );
+  }
+  return Image.network(
+    resolved,
+    width: 86,
+    height: 86,
+    fit: BoxFit.cover,
+    loadingBuilder: (context, child, progress) {
+      if (progress == null) return child;
+      return Container(
+        color: ax.withOpacity(0.12),
+        alignment: Alignment.center,
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(strokeWidth: 2, color: ax),
+        ),
+      );
+    },
+    errorBuilder: (_, __, ___) => Container(
+      color: ax.withOpacity(0.15),
+      alignment: Alignment.center,
+      child: const Text('👤', style: TextStyle(fontSize: 40)),
+    ),
+  );
+}
+
 class ProfileTab extends StatelessWidget {
   const ProfileTab({super.key});
 
@@ -18,6 +82,12 @@ class ProfileTab extends StatelessWidget {
     final app = context.watch<AppState>();
     final u = app.user;
     final ax = NyihaColors.accent(context);
+    final req = app.ticksRequiredAnnualSetting;
+    final paid = u.ticksPaid;
+    final owed = req <= 0 ? 0 : (req - paid).clamp(0, req);
+    final goldMember = app.isMemberApproved && req > 0 && paid >= req;
+    const gold = Color(0xFFE6B422);
+    const goldDeep = Color(0xFFB8860B);
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(
@@ -43,38 +113,81 @@ class ProfileTab extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (u.adminWarning.trim().isNotEmpty) ...[
+                  Material(
+                    color: Colors.red.withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(14),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.warning_amber_rounded, color: Colors.red.shade400, size: 22),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              u.adminWarning,
+                              style: nyihaNunito(context, size: 13, height: 1.35, color: NyihaColors.onSurface(context)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
                 Container(
-                  width: 92,
-                  height: 92,
+                  width: 96,
+                  height: 96,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: NyihaColors.primaryButtonGradient(context),
-                    border: Border.all(color: ax.withOpacity(0.5), width: 3),
-                    boxShadow: [BoxShadow(color: ax.withOpacity(0.3), blurRadius: 28, offset: const Offset(0, 10))],
+                    gradient: goldMember
+                        ? const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFFFFE566), gold, goldDeep],
+                          )
+                        : NyihaColors.primaryButtonGradient(context),
+                    border: Border.all(color: goldMember ? gold : ax.withOpacity(0.5), width: goldMember ? 4 : 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: (goldMember ? gold : ax).withOpacity(goldMember ? 0.5 : 0.3),
+                        blurRadius: goldMember ? 22 : 28,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
                   ),
                   alignment: Alignment.center,
-                  child: const Text('👨🏾', style: TextStyle(fontSize: 42)),
+                  child: ClipOval(
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          width: 86,
+                          height: 86,
+                          child: _profileAvatarInner(context, u, ax),
+                        ),
+                        if (app.profileAvatarUploading)
+                          Container(
+                            width: 86,
+                            height: 86,
+                            color: Colors.black.withOpacity(0.45),
+                            alignment: Alignment.center,
+                            child: const SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(u.name, style: nyihaCinzel(context, size: 22)),
                 Text('@${u.username}', style: nyihaNunito(context, size: 13, color: NyihaColors.onSurfaceMuted(context))),
                 const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: NyihaColors.greenAccent.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(color: NyihaColors.greenAccent.withOpacity(0.35)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.verified_rounded, size: 16, color: NyihaColors.greenAccent),
-                      const SizedBox(width: 6),
-                      Text('Ameidhinishwa', style: nyihaNunito(context, size: 12, weight: FontWeight.w700, color: NyihaColors.greenAccent)),
-                    ],
-                  ),
-                ),
+                _profileBadge(context, app, goldMember, gold, goldDeep),
               ],
             ),
           ),
@@ -94,17 +207,45 @@ class ProfileTab extends StatelessWidget {
                 children: [
                   _statBox(
                     context,
-                    Icons.confirmation_number_rounded,
-                    '${app.user.ticksPaid}/${AppState.ticksRequiredAnnual}',
-                    'Tiki zilizolipwa',
+                    Icons.paid_rounded,
+                    '$paid tiki',
+                    'Amelipa',
                     onTap: () => openLipaTikiScreen(context),
                   ),
-                  _statBox(context, Icons.account_balance_wallet_rounded, 'TZS 2,000', 'Deni'),
-                  _statBox(context, Icons.calendar_today_rounded, '2021', 'Mwaka wa kujiunga'),
-                  _statBox(context, Icons.workspace_premium_rounded, 'Mwanachama', 'Daraja'),
+                  _statBox(context, Icons.format_list_numbered_rounded, '$req tiki', 'Jumla (mwaka)'),
+                  _statBox(context, Icons.priority_high_rounded, '$owed tiki', 'Anadaiwa'),
+                  _statBox(
+                    context,
+                    Icons.account_balance_wallet_rounded,
+                    u.balance > 0 ? 'TZS ${u.balance}' : 'Hakuna',
+                    'Deni (TZS)',
+                    onTap: u.balance > 0 ? () => openLipaTikiScreen(context) : null,
+                  ),
                 ],
               ),
               const SizedBox(height: 22),
+              if (u.adminProfileNote.trim().isNotEmpty) ...[
+                GlassCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.admin_panel_settings_outlined, color: ax, size: 22),
+                          const SizedBox(width: 10),
+                          Text('Maelezo kutoka kwa wasimamizi', style: nyihaCinzel(context, size: 15)),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        u.adminProfileNote,
+                        style: nyihaNunito(context, size: 14, height: 1.4, color: NyihaColors.onSurface(context)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               GlassCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -122,7 +263,7 @@ class ProfileTab extends StatelessWidget {
               BtnGold(
                 label: 'Hariri profaili',
                 icon: Icons.edit_rounded,
-                onPressed: () => showNyihaToast(context, 'Kurasa ya kuhariri profaili...'),
+                onPressed: () => _pickProfilePhoto(context, app),
               ),
               const SizedBox(height: 12),
               BtnOutline(
@@ -200,6 +341,75 @@ class ProfileTab extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _profileBadge(BuildContext context, AppState app, bool goldMember, Color gold, Color goldDeep) {
+    if (goldMember) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [gold.withOpacity(0.22), goldDeep.withOpacity(0.12)],
+          ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: gold.withOpacity(0.9)),
+          boxShadow: [BoxShadow(color: gold.withOpacity(0.35), blurRadius: 14, offset: const Offset(0, 4))],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.verified_rounded, size: 22, color: goldDeep),
+            const SizedBox(width: 8),
+            Text(
+              'Mwanachama thabiti — tiki zote zimelipwa',
+              style: nyihaNunito(context, size: 12, weight: FontWeight.w800, color: goldDeep),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+    if (app.isMemberApproved) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: NyihaColors.greenAccent.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: NyihaColors.greenAccent.withOpacity(0.35)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.verified_rounded, size: 16, color: NyihaColors.greenAccent),
+            const SizedBox(width: 6),
+            Text(
+              'Ameidhinishwa',
+              style: nyihaNunito(context, size: 12, weight: FontWeight.w700, color: NyihaColors.greenAccent),
+            ),
+          ],
+        ),
+      );
+    }
+    final st = app.user.status.trim().toLowerCase();
+    final pending = st == 'pending';
+    final chip = pending ? Colors.orange.shade800 : Colors.red.shade700;
+    final label = pending ? 'Anasubiri uidhinishaji' : 'Akaunti imesitishwa';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(
+        color: chip.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: chip.withOpacity(0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(pending ? Icons.hourglass_empty_rounded : Icons.block_rounded, size: 16, color: chip),
+          const SizedBox(width: 6),
+          Text(label, style: nyihaNunito(context, size: 12, weight: FontWeight.w700, color: chip)),
+        ],
+      ),
     );
   }
 

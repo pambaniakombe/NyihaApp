@@ -8,8 +8,32 @@ import '../../widgets/glass_card.dart';
 import '../../widgets/nyiha_toast.dart';
 
 /// Lists [PendingSignupRequest] entries — admin confirms fee then approves or rejects.
-class AdminPendingSignupsPage extends StatelessWidget {
+class AdminPendingSignupsPage extends StatefulWidget {
   const AdminPendingSignupsPage({super.key});
+
+  @override
+  State<AdminPendingSignupsPage> createState() => _AdminPendingSignupsPageState();
+}
+
+class _AdminPendingSignupsPageState extends State<AdminPendingSignupsPage> {
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refresh();
+    });
+  }
+
+  Future<void> _refresh() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    final app = context.read<AppState>();
+    await app.fetchPendingSignupsApi();
+    if (!mounted) return;
+    setState(() => _loading = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,13 +51,17 @@ class AdminPendingSignupsPage extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.all(28),
                 child: Text(
-                  'Hakuna maombi mapya. Wanapotuma fomu na ada, yataonekana hapa.',
+                  _loading
+                      ? 'Inapakia maombi...'
+                      : 'Hakuna maombi mapya. Wanapotuma fomu na ada, yataonekana hapa.',
                   textAlign: TextAlign.center,
                   style: nyihaNunito(context, size: 14, color: NyihaColors.onSurfaceMuted(context)),
                 ),
               ),
             )
-          : ListView.builder(
+          : RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
               itemCount: app.pendingSignupRequests.length,
               itemBuilder: (context, i) {
@@ -98,9 +126,15 @@ class AdminPendingSignupsPage extends StatelessWidget {
                           children: [
                             Expanded(
                               child: FilledButton.icon(
-                                onPressed: () {
-                                  app.approveSignupRequest(r.id);
-                                  showNyihaToast(context, '${r.fullName} ameidhinishwa.');
+                                onPressed: () async {
+                                  final ok = await app.approveSignupRequestApi(r.id);
+                                  if (!context.mounted) return;
+                                  showNyihaToast(
+                                    context,
+                                    ok
+                                        ? '${r.fullName} ameidhinishwa.'
+                                        : (app.lastApiError ?? 'Imeshindikana kuidhinisha ombi.'),
+                                  );
                                 },
                                 icon: const Icon(Icons.check_circle_outline_rounded),
                                 label: const Text('Idhinisha'),
@@ -109,9 +143,15 @@ class AdminPendingSignupsPage extends StatelessWidget {
                             const SizedBox(width: 10),
                             Expanded(
                               child: OutlinedButton.icon(
-                                onPressed: () {
-                                  app.rejectSignupRequest(r.id);
-                                  showNyihaToast(context, 'Ombi limekataliwa.');
+                                onPressed: () async {
+                                  final ok = await app.rejectSignupRequestApi(r.id);
+                                  if (!context.mounted) return;
+                                  showNyihaToast(
+                                    context,
+                                    ok
+                                        ? 'Ombi limekataliwa.'
+                                        : (app.lastApiError ?? 'Imeshindikana kukataa ombi.'),
+                                  );
                                 },
                                 icon: const Icon(Icons.close_rounded),
                                 label: const Text('Kataa'),
@@ -124,6 +164,7 @@ class AdminPendingSignupsPage extends StatelessWidget {
                   ),
                 );
               },
+            ),
             ),
     );
   }

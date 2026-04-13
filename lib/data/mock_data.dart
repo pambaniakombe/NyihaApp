@@ -4,8 +4,9 @@ import '../models/models.dart';
 final List<Map<String, dynamic>> onboardSlides = [
   {
     'icon': '🏔️',
+    'imageAsset': 'assets/ic_launcher-dbe283b4-1882-48a2-8b1b-9c4202a0f734.png',
     'title': 'Karibu Nyiha App',
-    'sub': 'Jukwaa la kidijitali kwa Jamii ya Nyiha — watu wote wa Mbozi, popote ulipo duniani.',
+    'sub': 'Hili ni nyukwaa kwaajili ya wanyiha, Tunayo furaha kukualika wewe mnyiha kuungana na wanyiha wote duniani ili tuweze kushirikiana katika mambo mbalimbali',
     'color': const Color(0xFFD4A017),
   },
   {
@@ -16,14 +17,14 @@ final List<Map<String, dynamic>> onboardSlides = [
   },
   {
     'icon': '📊',
-    'title': 'Fuatilia Michango',
-    'sub': 'Angalia hali yako ya Mkeka, lipia ada, na uone mchango wako kwa jamii.',
+    'title': 'Kuhaya kwe kumwinyu',
+    'sub': 'Nyiha Society ipo tayari kukushika mkono pale unapotatwa na matatizo, kuwa huru kwako ni kama kwetu',
     'color': const Color(0xFF2D8A4E),
   },
   {
     'icon': '🛍️',
-    'title': 'Duka la Nyiha',
-    'sub': 'Nunua bidhaa za kipekee za Nyiha — kutoka nguo hadi vifaa vya utamaduni.',
+    'title': 'Utambuzi',
+    'sub': 'Tunatambuana kwa sare zetu , kofia na tshirt ungana nasi leo uwe miongoni mwa wana familia ya nyiha society',
     'color': const Color(0xFF1A5FA8),
   },
 ];

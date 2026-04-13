@@ -44,19 +44,38 @@ enum TickPaymentPhase {
 model User {
   id           String        @id @default(cuid())
   phone        String        @unique
+  email        String?       @unique
   passwordHash String
   name         String
+  avatarUrl    String?
   location     String
   children     Int           @default(0)
   status       MemberStatus  @default(pending)
   ticksPaid    Int           @default(0)
+  /// Short note from admins; shown on the member profile (e.g. "Amelipa tiki 6, Apr 2026").
+  adminProfileNote String    @default("") @db.Text
+  /// Urgent banner text for the member (e.g. payment reminder); empty = none.
+  adminWarning     String    @default("") @db.Text
   balance      Int           @default(0)
   username     String        @unique
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
-  orders       Order[]
-  chatMessages ChatMessage[] @relation("UserMessages")
+  orders             Order[]
+  chatMessages       ChatMessage[]       @relation("UserMessages")
+  passwordResetTokens PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model AdminUser {

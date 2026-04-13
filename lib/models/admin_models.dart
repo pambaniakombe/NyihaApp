@@ -34,20 +34,29 @@ enum MemberStatus {
 /// Row shown in admin console (mirrors jamii members + status).
 class ManagedMember {
   ManagedMember({
+    this.id,
     required this.name,
     required this.phone,
     required this.location,
     required this.ticks,
     required this.emoji,
     this.status = MemberStatus.approved,
+    this.adminProfileNote = '',
+    this.adminWarning = '',
+    this.balanceTzs = 0,
   });
 
+  String? id;
   String name;
   String phone;
   String location;
   int ticks;
   String emoji;
   MemberStatus status;
+  String adminProfileNote;
+  String adminWarning;
+  /// Deni halisi (TZS) — linasasishwa na wasimamizi.
+  int balanceTzs;
 }
 
 /// New member signup waiting for admin after registration + fee (demo: in-memory).

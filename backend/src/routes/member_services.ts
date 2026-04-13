@@ -8,6 +8,22 @@ export const memberServicesRouter = Router();
 
 memberServicesRouter.use(requireMember);
 
+memberServicesRouter.get("/members", async (_req: AuthedRequest, res) => {
+  const users = await prisma.user.findMany({
+    where: { status: "approved" },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+      location: true,
+      ticksPaid: true,
+      status: true,
+    },
+  });
+  res.json(users);
+});
+
 const tickBody = z.object({
   tickCount: z.coerce.number().int().min(1),
 });

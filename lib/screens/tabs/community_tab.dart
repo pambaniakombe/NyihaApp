@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../data/mock_data.dart';
 import '../../models/models.dart';
 import '../../providers/app_state.dart';
 import '../../theme/nyiha_colors.dart';
 import '../../theme/nyiha_text.dart';
+import '../../services/nyiha_api.dart';
+import '../../widgets/chat_avatar.dart';
 import '../../widgets/community_chat_composer.dart';
 import '../../widgets/community_voice_note_bar.dart';
 import '../../widgets/glass_card.dart';
@@ -191,10 +192,33 @@ class _CommunityTabState extends State<CommunityTab> {
                     style: nyihaNunito(context, size: 11, color: NyihaColors.accent(context)),
                   ),
                 ),
-              CommunityChatComposer(canPost: app.canCurrentUserPostCommunityChat),
+              CommunityChatComposer(canPost: app.canSendJamiiComposer),
             ],
           ),
       ],
+    );
+  }
+
+  Widget _meChatRow(BuildContext context, ChatMsg m, Widget bubbleCard) {
+    final myAv = context.watch<AppState>().user.avatarUrl;
+    final merged = m.avatarUrl?.trim();
+    final url = (merged != null && merged.isNotEmpty) ? merged : myAv;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Flexible(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: bubbleCard,
+            ),
+          ),
+          const SizedBox(width: 8),
+          ChatAvatar(imageUrl: url, fallbackEmoji: '👤', radius: 16),
+        ],
+      ),
     );
   }
 
@@ -208,94 +232,148 @@ class _CommunityTabState extends State<CommunityTab> {
       bottomRight: Radius.circular(4),
     );
 
-    if (m.mediaKind == ChatMediaKind.image && m.imageBytes != null) {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          constraints: BoxConstraints(maxWidth: maxW),
-          decoration: BoxDecoration(
-            gradient: NyihaColors.primaryButtonGradient(context),
-            borderRadius: radius,
-          ),
-          padding: const EdgeInsets.all(8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.memory(
-                  m.imageBytes!,
-                  width: 220,
-                  height: 180,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    width: 220,
-                    height: 120,
-                    color: on.withOpacity(0.2),
-                    alignment: Alignment.center,
-                    child: Icon(Icons.broken_image_outlined, color: on),
-                  ),
-                ),
-              ),
-              if (m.text.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Text(m.text, style: nyihaNunito(context, size: 13, color: on)),
+    if (m.mediaKind == ChatMediaKind.image) {
+      final net = NyihaApi.resolveChatMediaUrl(m.imageUrl);
+      final hasImg = m.imageBytes != null || net.isNotEmpty;
+      if (hasImg) {
+        return _meChatRow(
+          context,
+          m,
+          Container(
+            constraints: BoxConstraints(maxWidth: maxW),
+            decoration: BoxDecoration(
+              gradient: NyihaColors.primaryButtonGradient(context),
+              borderRadius: radius,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.12),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
                 ),
               ],
-              const SizedBox(height: 6),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Text(m.time, style: nyihaNunito(context, size: 10, color: on.withOpacity(0.65))),
-              ),
-            ],
+            ),
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: m.imageBytes != null
+                      ? Image.memory(
+                          m.imageBytes!,
+                          width: 220,
+                          height: 180,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 220,
+                            height: 120,
+                            color: on.withOpacity(0.2),
+                            alignment: Alignment.center,
+                            child: Icon(Icons.broken_image_outlined, color: on),
+                          ),
+                        )
+                      : Image.network(
+                          net,
+                          width: 220,
+                          height: 180,
+                          fit: BoxFit.cover,
+                          loadingBuilder: (_, child, prog) =>
+                              prog == null ? child : Container(
+                                    width: 220,
+                                    height: 120,
+                                    alignment: Alignment.center,
+                                    color: on.withOpacity(0.12),
+                                    child: const SizedBox(
+                                      width: 28,
+                                      height: 28,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    ),
+                                  ),
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 220,
+                            height: 120,
+                            color: on.withOpacity(0.2),
+                            alignment: Alignment.center,
+                            child: Icon(Icons.broken_image_outlined, color: on),
+                          ),
+                        ),
+                ),
+                if (m.text.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Text(m.text, style: nyihaNunito(context, size: 13, color: on)),
+                  ),
+                ],
+                const SizedBox(height: 6),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Text(m.time, style: nyihaNunito(context, size: 10, color: on.withOpacity(0.65))),
+                ),
+              ],
+            ),
           ),
-        ),
-      );
+        );
+      }
     }
 
-    if (m.mediaKind == ChatMediaKind.voice &&
-        m.voiceFilePath != null &&
-        m.voiceDurationSec != null) {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          constraints: BoxConstraints(maxWidth: maxW),
-          decoration: BoxDecoration(
-            gradient: NyihaColors.primaryButtonGradient(context),
-            borderRadius: radius,
+    if (m.mediaKind == ChatMediaKind.voice && m.voiceDurationSec != null) {
+      final path = m.voiceFilePath;
+      final net = NyihaApi.resolveChatMediaUrl(m.voiceUrl);
+      final src = (path != null && path.isNotEmpty) ? path : net;
+      if (src.isNotEmpty) {
+        return _meChatRow(
+          context,
+          m,
+          Container(
+            constraints: BoxConstraints(maxWidth: maxW),
+            decoration: BoxDecoration(
+              gradient: NyihaColors.primaryButtonGradient(context),
+              borderRadius: radius,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.12),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                CommunityVoiceNoteBar(
+                  audioSource: src,
+                  durationSec: m.voiceDurationSec!,
+                  isMe: true,
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Text(m.time, style: nyihaNunito(context, size: 10, color: on.withOpacity(0.65))),
+                ),
+              ],
+            ),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              CommunityVoiceNoteBar(
-                filePath: m.voiceFilePath!,
-                durationSec: m.voiceDurationSec!,
-                isMe: true,
-              ),
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Text(m.time, style: nyihaNunito(context, size: 10, color: on.withOpacity(0.65))),
-              ),
-            ],
-          ),
-        ),
-      );
+        );
+      }
     }
 
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
+    return _meChatRow(
+      context,
+      m,
+      Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         constraints: BoxConstraints(maxWidth: maxW),
         decoration: BoxDecoration(
           gradient: NyihaColors.primaryButtonGradient(context),
           borderRadius: radius,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.12),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -317,17 +395,29 @@ class _CommunityTabState extends State<CommunityTab> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          CircleAvatar(
-            radius: 14,
-            backgroundColor: NyihaColors.accent(context).withOpacity(0.15),
-            child: Text(m.emoji ?? '👤', style: const TextStyle(fontSize: 14)),
+          ChatAvatar(
+            imageUrl: m.avatarUrl,
+            fallbackEmoji: m.emoji ?? '👤',
+            radius: 16,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(m.from, style: nyihaNunito(context, size: 10, color: NyihaColors.accent(context).withOpacity(0.6))),
+                Padding(
+                  padding: const EdgeInsets.only(left: 2, bottom: 4),
+                  child: Text(
+                    m.from,
+                    style: nyihaNunito(
+                      context,
+                      size: 11,
+                      weight: FontWeight.w700,
+                      letterSpacing: 0.15,
+                      color: NyihaColors.accent(context).withOpacity(0.88),
+                    ),
+                  ),
+                ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
@@ -343,11 +433,74 @@ class _CommunityTabState extends State<CommunityTab> {
                       bottomRight: Radius.circular(16),
                       bottomLeft: Radius.circular(4),
                     ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 12,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(m.text, style: nyihaNunito(context, size: 13)),
+                      if (m.mediaKind == ChatMediaKind.image &&
+                          (m.imageBytes != null || NyihaApi.resolveChatMediaUrl(m.imageUrl).isNotEmpty)) ...[
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: m.imageBytes != null
+                              ? Image.memory(
+                                  m.imageBytes!,
+                                  width: 220,
+                                  height: 160,
+                                  fit: BoxFit.cover,
+                                )
+                              : Image.network(
+                                  NyihaApi.resolveChatMediaUrl(m.imageUrl),
+                                  width: 220,
+                                  height: 160,
+                                  fit: BoxFit.cover,
+                                  loadingBuilder: (_, child, prog) => prog == null
+                                      ? child
+                                      : SizedBox(
+                                          width: 220,
+                                          height: 120,
+                                          child: Center(
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: NyihaColors.accent(context),
+                                            ),
+                                          ),
+                                        ),
+                                  errorBuilder: (_, __, ___) => SizedBox(
+                                    width: 220,
+                                    height: 100,
+                                    child: Icon(Icons.broken_image_outlined, color: NyihaColors.onSurfaceMuted(context)),
+                                  ),
+                                ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      if (m.mediaKind == ChatMediaKind.voice && m.voiceDurationSec != null) ...[
+                        Builder(
+                          builder: (ctx) {
+                            final path = m.voiceFilePath;
+                            final net = NyihaApi.resolveChatMediaUrl(m.voiceUrl);
+                            final src = (path != null && path.isNotEmpty) ? path : net;
+                            if (src.isEmpty) return const SizedBox.shrink();
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: CommunityVoiceNoteBar(
+                                audioSource: src,
+                                durationSec: m.voiceDurationSec!,
+                                isMe: false,
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                      if (m.text.isNotEmpty)
+                        Text(m.text, style: nyihaNunito(context, size: 13)),
                       Text(
                         m.time,
                         style: nyihaNunito(context, size: 10, color: NyihaColors.onSurfaceMuted(context).withOpacity(0.85)),
@@ -364,7 +517,10 @@ class _CommunityTabState extends State<CommunityTab> {
   }
 
   Widget _membersView(BuildContext context) {
-    var list = mockMembers.toList();
+    final app = context.read<AppState>();
+    var list = app.managedMembers
+        .map((m) => MockMember(name: m.name, loc: m.location, ticks: m.ticks, emoji: m.emoji))
+        .toList();
     final q = _memberSearch.text.toLowerCase();
     if (q.isNotEmpty) {
       list = list.where((m) => m.name.toLowerCase().contains(q) || m.loc.toLowerCase().contains(q)).toList();
@@ -389,7 +545,10 @@ class _CommunityTabState extends State<CommunityTab> {
           style: nyihaNunito(context, size: 11, color: NyihaColors.onSurfaceMuted(context)),
         ),
         const SizedBox(height: 16),
-        ...list.map((m) => _memberTile(context, m)),
+        if (list.isEmpty)
+          Text('Hakuna wanachama wa kweli bado.', style: nyihaNunito(context, size: 12, color: NyihaColors.onSurfaceMuted(context)))
+        else
+          ...list.map((m) => _memberTile(context, m)),
       ],
     );
   }
@@ -557,7 +716,20 @@ class _CommunityTabState extends State<CommunityTab> {
   }
 
   Widget _mkekaView(BuildContext context, AppState app) {
-    final sorted = [...mockMembers]..sort((a, b) => b.ticks.compareTo(a.ticks));
+    final members = app.managedMembers
+        .map((m) => MockMember(name: m.name, loc: m.location, ticks: m.ticks, emoji: m.emoji))
+        .toList();
+    if (members.isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Jedwali la Mkeka', style: nyihaCinzel(context, size: 16)),
+          const SizedBox(height: 16),
+          Text('Hakuna data ya wanachama wa kweli bado.', style: nyihaNunito(context, size: 13, color: NyihaColors.onSurfaceMuted(context))),
+        ],
+      );
+    }
+    final sorted = [...members]..sort((a, b) => b.ticks.compareTo(a.ticks));
     final max = sorted.first.ticks;
     return ListView(
       padding: const EdgeInsets.all(16),

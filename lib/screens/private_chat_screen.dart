@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/app_state.dart';
+import '../widgets/chat_avatar.dart';
 import '../theme/nyiha_colors.dart';
 import '../theme/nyiha_text.dart';
 
@@ -172,32 +173,47 @@ class _DmBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final myAv = context.watch<AppState>().user.avatarUrl;
     if (msg.me) {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
-          decoration: BoxDecoration(
-            gradient: NyihaColors.primaryButtonGradient(context),
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(16),
-              topRight: Radius.circular(16),
-              bottomLeft: Radius.circular(16),
-              bottomRight: Radius.circular(4),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(msg.text, style: nyihaNunito(context, size: 13, color: NyihaColors.onPrimaryButton(context))),
-              Text(
-                msg.time,
-                style: nyihaNunito(context, size: 10, color: NyihaColors.onPrimaryButton(context).withOpacity(0.65)),
+      final mePhoto = msg.avatarUrl?.trim();
+      final avUrl = (mePhoto != null && mePhoto.isNotEmpty) ? mePhoto : myAv;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Flexible(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
+                  decoration: BoxDecoration(
+                    gradient: NyihaColors.primaryButtonGradient(context),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      topRight: Radius.circular(16),
+                      bottomLeft: Radius.circular(16),
+                      bottomRight: Radius.circular(4),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(msg.text, style: nyihaNunito(context, size: 13, color: NyihaColors.onPrimaryButton(context))),
+                      Text(
+                        msg.time,
+                        style: nyihaNunito(context, size: 10, color: NyihaColors.onPrimaryButton(context).withOpacity(0.65)),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 8),
+            ChatAvatar(imageUrl: avUrl, fallbackEmoji: '👤', radius: 16),
+          ],
         ),
       );
     }
@@ -206,10 +222,10 @@ class _DmBubble extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          CircleAvatar(
-            radius: 14,
-            backgroundColor: NyihaColors.accent(context).withOpacity(0.15),
-            child: Text(msg.emoji ?? '👤', style: const TextStyle(fontSize: 14)),
+          ChatAvatar(
+            imageUrl: msg.avatarUrl,
+            fallbackEmoji: msg.emoji ?? '👤',
+            radius: 16,
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -218,7 +234,13 @@ class _DmBubble extends StatelessWidget {
               children: [
                 Text(
                   msg.from,
-                  style: nyihaNunito(context, size: 10, color: NyihaColors.accent(context).withOpacity(0.75)),
+                  style: nyihaNunito(
+                    context,
+                    size: 11,
+                    weight: FontWeight.w700,
+                    letterSpacing: 0.15,
+                    color: NyihaColors.accent(context).withOpacity(0.85),
+                  ),
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),

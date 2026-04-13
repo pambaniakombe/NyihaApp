@@ -5,16 +5,17 @@ import 'package:flutter/material.dart';
 import '../theme/nyiha_colors.dart';
 import '../theme/nyiha_text.dart';
 
-/// Play/stop for a local voice file (Mazungumzo bubbles).
+/// Play/stop for Mazungumzo bubbles — local file path or `http(s)` URL from API.
 class CommunityVoiceNoteBar extends StatefulWidget {
   const CommunityVoiceNoteBar({
     super.key,
-    required this.filePath,
+    required this.audioSource,
     required this.durationSec,
     required this.isMe,
   });
 
-  final String filePath;
+  /// Device file path (e.g. `.m4a`) or remote URL after upload.
+  final String audioSource;
   final int durationSec;
   final bool isMe;
 
@@ -47,7 +48,12 @@ class _CommunityVoiceNoteBarState extends State<CommunityVoiceNoteBar> {
         await _player.pause();
         if (mounted) setState(() => _playing = false);
       } else {
-        await _player.play(DeviceFileSource(widget.filePath));
+        final src = widget.audioSource;
+        await _player.play(
+          src.startsWith('http://') || src.startsWith('https://')
+              ? UrlSource(src)
+              : DeviceFileSource(src),
+        );
         if (mounted) setState(() => _playing = true);
       }
     } catch (_) {

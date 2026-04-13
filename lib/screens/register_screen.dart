@@ -57,6 +57,7 @@ const List<_StepDef> _regSteps = [
     label: 'Akaunti',
     fields: [
       _FieldDef(id: 'r-phone', label: 'Nambari ya Simu', type: 'tel', placeholder: '+255 xxx xxx xxx'),
+      _FieldDef(id: 'r-email', label: 'Barua Pepe', type: 'email', placeholder: 'jina@mfano.com'),
       _FieldDef(id: 'r-username', label: 'Jina la Mtumiaji', type: 'text', placeholder: 'nyiha_user'),
       _FieldDef(id: 'r-pass', label: 'Nenosiri', type: 'password', placeholder: 'Angalau herufi 8'),
       _FieldDef(id: 'r-pass2', label: 'Thibitisha Nenosiri', type: 'password', placeholder: 'Rudia nenosiri'),
@@ -80,6 +81,7 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final Map<String, TextEditingController> _controllers = {};
+  bool _submitting = false;
 
   @override
   void dispose() {
@@ -109,6 +111,54 @@ class _RegisterScreenState extends State<RegisterScreen> {
     for (final f in step.fields) {
       app.saveRegField(f.id, _ctrl(f.id).text);
     }
+  }
+
+  Future<void> _finishOrAdvance(AppState app) async {
+    _saveStep(app);
+    if (app.regStep < _regSteps.length) {
+      app.setRegStep(app.regStep + 1);
+      return;
+    }
+    final email = _ctrl('r-email').text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Weka barua pepe halali (inahitajika kwa uhifadhi na nenosiri).')),
+        );
+      }
+      return;
+    }
+    final p1 = _ctrl('r-pass').text;
+    final p2 = _ctrl('r-pass2').text;
+    if (p1.length < 8) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Nenosiri lazima liwe angalau herufi 8.')),
+        );
+      }
+      return;
+    }
+    if (p1 != p2) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Nenosiri hazifanani. Rudia tena.')),
+        );
+      }
+      return;
+    }
+    setState(() => _submitting = true);
+    final ok = await app.registerWithApi();
+    if (!mounted) return;
+    setState(() => _submitting = false);
+    if (!ok) {
+      final err = app.lastApiError ?? 'Hitilafu isiyojulikana.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+      return;
+    }
+    app.applyRegistrationToUser();
+    await app.refreshRemoteCatalog();
+    if (!mounted) return;
+    app.setScreen(AppScreen.terms);
   }
 
   InputDecoration _dec(BuildContext context, String? hint) {
@@ -142,6 +192,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           onPressed: () => app.setScreen(AppScreen.onboarding),
                           icon: const Icon(Icons.arrow_back_rounded, color: NyihaColors.gold),
                           style: IconButton.styleFrom(backgroundColor: NyihaColors.gold.withOpacity(0.1)),
+                        ),
+                        const SizedBox(height: 12),
+                        Center(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Image.asset(
+                              'assets/ic_launcher-dbe283b4-1882-48a2-8b1b-9c4202a0f734.png',
+                              width: 80,
+                              height: 80,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 8),
                         Text('Jiunge nasi', style: nyihaCinzel(context, size: 26)),
@@ -202,7 +264,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                         ? TextInputType.number
                                         : f.type == 'tel'
                                             ? TextInputType.phone
-                                            : TextInputType.text,
+                                            : f.type == 'email'
+                                                ? TextInputType.emailAddress
+                                                : TextInputType.text,
+                                    autofillHints: f.type == 'email'
+                                        ? const [AutofillHints.email]
+                                        : f.type == 'password'
+                                            ? const [AutofillHints.newPassword]
+                                            : null,
                                     style: nyihaNunito(context, size: 14, color: NyihaColors.onSurface(context)),
                                     decoration: _dec(context, f.placeholder),
                                   ),
@@ -226,15 +295,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             Expanded(
                               flex: app.regStep > 1 ? 1 : 1,
                               child: BtnGold(
-                                label: app.regStep == _regSteps.length ? 'Maliza ✓' : 'Endelea →',
-                                onPressed: () {
-                                  _saveStep(app);
-                                  if (app.regStep == _regSteps.length) {
-                                    app.setScreen(AppScreen.terms);
-                                  } else {
-                                    app.setRegStep(app.regStep + 1);
-                                  }
-                                },
+                                label: _submitting
+                                    ? 'Inatumika...'
+                                    : app.regStep == _regSteps.length
+                                        ? 'Maliza ✓'
+                                        : 'Endelea →',
+                                onPressed: _submitting ? null : () => _finishOrAdvance(app),
                               ),
                             ),
                           ],

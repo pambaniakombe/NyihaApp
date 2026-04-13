@@ -16,6 +16,7 @@ class OnboardingScreen extends StatelessWidget {
       builder: (context, app, _) {
         final slide = onboardSlides[app.onboardStep];
         final color = slide['color'] as Color;
+        final imageAsset = slide['imageAsset'] as String?;
         final last = app.onboardStep == onboardSlides.length - 1;
         return Scaffold(
           body: Stack(
@@ -57,7 +58,17 @@ class OnboardingScreen extends StatelessWidget {
                                     ],
                                   ),
                                   alignment: Alignment.center,
-                                  child: Text('${slide['icon']}', style: const TextStyle(fontSize: 54)),
+                                  child: imageAsset != null
+                                      ? ClipRRect(
+                                          borderRadius: BorderRadius.circular(22),
+                                          child: Image.asset(
+                                            imageAsset,
+                                            width: 86,
+                                            height: 86,
+                                            fit: BoxFit.cover,
+                                          ),
+                                        )
+                                      : Text('${slide['icon']}', style: const TextStyle(fontSize: 54)),
                                 ),
                                 const SizedBox(height: 28),
                                 Text(

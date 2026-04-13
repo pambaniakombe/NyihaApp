@@ -9,14 +9,14 @@ function colorArgb(hex: number): number {
 }
 
 async function main() {
-  const pinHash = await bcrypt.hash("0000", 10);
+  const adminPass = await bcrypt.hash("Zamani70%", 10);
   await prisma.adminUser.upsert({
-    where: { email: "mkuu@nyiha.app" },
-    update: {},
+    where: { email: "adamadministrator@nyiha.app" },
+    update: { passwordHash: adminPass },
     create: {
-      email: "mkuu@nyiha.app",
-      passwordHash: pinHash,
-      displayName: "Mkuu wa Wasimamizi",
+      email: "adamadministrator@nyiha.app",
+      passwordHash: adminPass,
+      displayName: "Adam Administrator",
       role: "main",
       linkedMemberPhone: "+255712345678",
     },

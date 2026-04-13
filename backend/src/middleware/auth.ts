@@ -46,3 +46,24 @@ export function requireMainAdmin(req: AuthedRequest, res: Response, next: NextFu
     next();
   });
 }
+
+/** Accept either a member JWT or an admin JWT (chat upload + read). */
+export function requireMemberOrAdmin(req: AuthedRequest, res: Response, next: NextFunction) {
+  const t = bearer(req);
+  if (!t) return res.status(401).json({ error: "Missing Bearer token" });
+  try {
+    const p = verifyMemberToken(t);
+    req.memberId = p.sub;
+    return next();
+  } catch {
+    /* try admin */
+  }
+  try {
+    const p = verifyAdminToken(t);
+    req.adminId = p.sub;
+    req.adminRole = p.role;
+    return next();
+  } catch {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+}

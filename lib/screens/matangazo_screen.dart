@@ -117,7 +117,7 @@ class MatangazoScreen extends StatelessWidget {
                                 style: nyihaNunito(context, size: 12, color: tc2),
                               ),
                               Text(
-                                '${mockMembers.length}',
+                                '${app.managedMembers.length}',
                                 style: nyihaCinzel(context, size: 22, weight: FontWeight.w700),
                               ),
                             ],

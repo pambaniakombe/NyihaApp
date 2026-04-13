@@ -4,22 +4,33 @@ class NyihaUser {
   NyihaUser({
     required this.name,
     required this.phone,
+    this.email = '',
     required this.location,
     required this.children,
     required this.status,
     required this.ticksPaid,
     required this.balance,
     required this.username,
+    this.adminProfileNote = '',
+    this.adminWarning = '',
+    this.avatarUrl,
   });
 
   String name;
   String phone;
+  String email;
+  /// Server path or absolute URL (`/api/v1/me/media/...`); shown in profile and own chat bubbles.
+  String? avatarUrl;
   String location;
   int children;
   String status;
   int ticksPaid;
   int balance;
   String username;
+  /// Notes from admins; shown on profile (e.g. payment record).
+  String adminProfileNote;
+  /// Banner warning from admins; empty = none.
+  String adminWarning;
 }
 
 enum ChatMediaKind { text, image, voice }
@@ -35,6 +46,12 @@ class ChatMsg {
     this.imageBytes,
     this.voiceFilePath,
     this.voiceDurationSec,
+    /// HTTPS URL from API (`/api/v1/chat/media/...` or absolute); used when [imageBytes] is null.
+    this.imageUrl,
+    /// HTTPS URL from API for remote playback when [voiceFilePath] is null.
+    this.voiceUrl,
+    /// Sender profile photo from API (`/api/v1/me/media/...`); omitted for local-only mocks.
+    this.avatarUrl,
   }) : _kindCode = kind == null ? 0 : kind.index;
 
   final String from;
@@ -42,6 +59,7 @@ class ChatMsg {
   final String time;
   final bool me;
   final String? emoji;
+  final String? avatarUrl;
   /// 0=text, 1=image, 2=voice — stored as int; nullable backing field so stale instances
   /// after hot reload (old layout) do not throw when read.
   final int? _kindCode;
@@ -49,6 +67,8 @@ class ChatMsg {
   final Uint8List? imageBytes;
   final String? voiceFilePath;
   final int? voiceDurationSec;
+  final String? imageUrl;
+  final String? voiceUrl;
 
   ChatMediaKind get mediaKind {
     final i = kindCode.clamp(0, ChatMediaKind.values.length - 1);
@@ -130,6 +150,7 @@ class MockProduct {
     required this.emoji,
     required this.color,
     required this.imageUrl,
+    this.apiId,
   });
 
   final String name;
@@ -138,6 +159,8 @@ class MockProduct {
   final int color;
   /// Network image for carousel and duka (replace with your CDN or assets later).
   final String imageUrl;
+  /// Server id when loaded from API.
+  final String? apiId;
 }
 
 /// Placed duka order (awaiting payment; seller confirms later).

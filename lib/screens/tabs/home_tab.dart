@@ -115,7 +115,7 @@ class HomeTab extends StatelessWidget {
               const SizedBox(height: 26),
               Builder(
                 builder: (context) {
-                  final req = AppState.ticksRequiredAnnual;
+                  final req = app.ticksRequiredAnnualSetting;
                   final paid = app.user.ticksPaid;
                   final owed = app.ticksOwedAnnual;
                   final pct = req == 0 ? 0.0 : paid / req;

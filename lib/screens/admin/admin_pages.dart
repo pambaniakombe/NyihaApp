@@ -8,6 +8,10 @@ import '../../models/models.dart';
 import '../../providers/app_state.dart';
 import '../../theme/nyiha_colors.dart';
 import '../../theme/nyiha_text.dart';
+import '../../services/nyiha_api.dart';
+import '../../widgets/chat_avatar.dart';
+import '../../widgets/community_chat_composer.dart';
+import '../../widgets/community_voice_note_bar.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/nyiha_toast.dart';
 import 'admin_pending_signups_page.dart';
@@ -252,6 +256,204 @@ class _StatCard extends StatelessWidget {
   }
 }
 
+Future<void> _openWanajamiiMemberEditor(BuildContext context, ManagedMember member) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    backgroundColor: Theme.of(context).brightness == Brightness.dark
+        ? NyihaColors.earth850
+        : NyihaColors.lightSurface,
+    builder: (ctx) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+      child: _WanajamiiMemberEditorSheet(member: member),
+    ),
+  );
+}
+
+class _WanajamiiMemberEditorSheet extends StatefulWidget {
+  const _WanajamiiMemberEditorSheet({required this.member});
+
+  final ManagedMember member;
+
+  @override
+  State<_WanajamiiMemberEditorSheet> createState() => _WanajamiiMemberEditorSheetState();
+}
+
+class _WanajamiiMemberEditorSheetState extends State<_WanajamiiMemberEditorSheet> {
+  late TextEditingController _ticksCtrl;
+  late TextEditingController _deniCtrl;
+  late TextEditingController _notesCtrl;
+  late TextEditingController _warnCtrl;
+  late MemberStatus _status;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticksCtrl = TextEditingController(text: widget.member.ticks.toString());
+    _deniCtrl = TextEditingController(text: widget.member.balanceTzs.toString());
+    _notesCtrl = TextEditingController(text: widget.member.adminProfileNote);
+    _warnCtrl = TextEditingController(text: widget.member.adminWarning);
+    _status = widget.member.status;
+  }
+
+  @override
+  void dispose() {
+    _ticksCtrl.dispose();
+    _deniCtrl.dispose();
+    _notesCtrl.dispose();
+    _warnCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ax = NyihaColors.accent(context);
+    final muted = NyihaColors.onSurfaceMuted(context);
+    final app = context.watch<AppState>();
+    final jumla = app.ticksRequiredAnnualSetting;
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Hariri mwanachama', style: nyihaCinzel(context, size: 18)),
+            const SizedBox(height: 6),
+            Text(widget.member.name, style: nyihaNunito(context, size: 14, weight: FontWeight.w700)),
+            Text(widget.member.phone, style: nyihaNunito(context, size: 12, color: muted)),
+            const SizedBox(height: 8),
+            Text(
+              'Jumla ya tiki kwa mwaka (mipangilio): $jumla. Anadaiwa = jumla − tiki zilizolipwa.',
+              style: nyihaNunito(context, size: 11, color: muted, height: 1.35),
+            ),
+            const SizedBox(height: 20),
+            Text('Tiki zilizolipwa (amelipa)', style: nyihaSectionLabel(context)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _ticksCtrl,
+              keyboardType: TextInputType.number,
+              style: nyihaNunito(context, color: NyihaColors.onSurface(context)),
+              decoration: InputDecoration(
+                hintText: 'Mf. 12',
+                filled: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text('Hali / daraja', style: nyihaSectionLabel(context)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<MemberStatus>(
+              value: _status,
+              decoration: InputDecoration(
+                filled: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              items: const [
+                DropdownMenuItem(value: MemberStatus.approved, child: Text('Ameidhinishwa')),
+                DropdownMenuItem(value: MemberStatus.pending, child: Text('Anasubiri uidhinishaji')),
+                DropdownMenuItem(value: MemberStatus.suspended, child: Text('Amesitishwa')),
+              ],
+              onChanged: (v) {
+                if (v != null) setState(() => _status = v);
+              },
+            ),
+            const SizedBox(height: 20),
+            Text('Deni (TZS)', style: nyihaSectionLabel(context)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _deniCtrl,
+              keyboardType: TextInputType.number,
+              style: nyihaNunito(context, color: NyihaColors.onSurface(context)),
+              decoration: InputDecoration(
+                hintText: 'Mf. 4000',
+                filled: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Kiasi kinachodaiwa halisi kwenye akaunti (sababu ziko kwenye maelezo ya juu). 0 = hana deni.',
+              style: nyihaNunito(context, size: 11, color: muted, height: 1.35),
+            ),
+            const SizedBox(height: 20),
+            Text('Maelezo ya admin (wasifu)', style: nyihaSectionLabel(context)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _notesCtrl,
+              minLines: 2,
+              maxLines: 5,
+              style: nyihaNunito(context, color: NyihaColors.onSurface(context)),
+              decoration: InputDecoration(
+                hintText: 'Mf. Amelipa tiki 6 mwezi Apr 2026...',
+                filled: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text('Onyo kwa mtumiaji (banner nyekundu)', style: nyihaSectionLabel(context)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _warnCtrl,
+              minLines: 2,
+              maxLines: 4,
+              style: nyihaNunito(context, color: NyihaColors.onSurface(context)),
+              decoration: InputDecoration(
+                hintText: 'Acha tupu kuondoa. Mf. Fanya malipo ya tiki zilizobaki...',
+                filled: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Maelezo na onyo yanaonekana kwa mtumiaji kwenye Wasifu mara /me inaposasishwa.',
+              style: nyihaNunito(context, size: 11, color: muted),
+            ),
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: () async {
+                final raw = _ticksCtrl.text.trim();
+                final ticks = int.tryParse(raw);
+                if (ticks == null || ticks < 0) {
+                  showNyihaToast(context, 'Weka nambari halali ya tiki (0 au zaidi).');
+                  return;
+                }
+                final deni = int.tryParse(_deniCtrl.text.trim());
+                if (deni == null || deni < 0) {
+                  showNyihaToast(context, 'Weka deni halali (TZS, nambari kamili, 0 au zaidi).');
+                  return;
+                }
+                final reader = context.read<AppState>();
+                final ok = await reader.patchManagedMemberApi(
+                  widget.member,
+                  status: _status,
+                  ticks: ticks,
+                  balanceTzs: deni,
+                  adminProfileNote: _notesCtrl.text,
+                  adminWarning: _warnCtrl.text,
+                );
+                if (!context.mounted) return;
+                if (ok) {
+                  Navigator.of(context).pop();
+                  showNyihaToast(context, 'Taarifa za ${widget.member.name} zimehifadhiwa.');
+                } else {
+                  showNyihaToast(context, reader.lastApiError ?? 'Imeshindikana kuhifadhi.');
+                }
+              },
+              child: Text('Hifadhi', style: nyihaNunito(context, weight: FontWeight.w700)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('Ghairi', style: nyihaNunito(context, color: ax)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Approve / suspend members, view ticks.
 class AdminMembersPage extends StatelessWidget {
   const AdminMembersPage({super.key});
@@ -264,6 +466,7 @@ class AdminMembersPage extends StatelessWidget {
       itemCount: app.managedMembers.length,
       itemBuilder: (context, i) {
         final m = app.managedMembers[i];
+        final ax = NyihaColors.accent(context);
         final chip = Color(switch (m.status) {
           MemberStatus.approved => 0xFF2D8A4E,
           MemberStatus.pending => 0xFFC45E1A,
@@ -310,16 +513,41 @@ class AdminMembersPage extends StatelessWidget {
                           Text('Tiki: ${m.ticks}', style: nyihaNunito(context, size: 11, color: NyihaColors.onSurfaceMuted(context))),
                         ],
                       ),
+                      const SizedBox(height: 4),
+                      Text(
+                        m.balanceTzs > 0 ? 'Deni: TZS ${m.balanceTzs}' : 'Deni: hakuna',
+                        style: nyihaNunito(
+                          context,
+                          size: 10,
+                          weight: FontWeight.w600,
+                          color: m.balanceTzs > 0 ? Colors.orange.shade800 : NyihaColors.onSurfaceMuted(context),
+                        ),
+                      ),
                     ],
                   ),
                 ),
+                IconButton(
+                  tooltip: 'Hariri tiki, deni na hali',
+                  icon: Icon(Icons.edit_outlined, color: ax),
+                  onPressed: () => _openWanajamiiMemberEditor(context, m),
+                ),
                 PopupMenuButton<String>(
-                  icon: Icon(Icons.more_vert_rounded, color: NyihaColors.accent(context)),
-                  onSelected: (v) {
-                    if (v == 'approve') app.setMemberStatus(m.name, MemberStatus.approved);
-                    if (v == 'pending') app.setMemberStatus(m.name, MemberStatus.pending);
-                    if (v == 'suspend') app.setMemberStatus(m.name, MemberStatus.suspended);
-                    showNyihaToast(context, 'Hali ya ${m.name} imesasishwa.');
+                  icon: Icon(Icons.more_vert_rounded, color: ax),
+                  onSelected: (v) async {
+                    final target = switch (v) {
+                      'approve' => MemberStatus.approved,
+                      'pending' => MemberStatus.pending,
+                      'suspend' => MemberStatus.suspended,
+                      _ => m.status,
+                    };
+                    final ok = await app.setManagedMemberStatusApi(m, target);
+                    if (!context.mounted) return;
+                    showNyihaToast(
+                      context,
+                      ok
+                          ? 'Hali ya ${m.name} imesasishwa.'
+                          : (app.lastApiError ?? 'Imeshindikana kusasisha hali.'),
+                    );
                   },
                   itemBuilder: (_) => [
                     const PopupMenuItem(value: 'approve', child: Text('Idhinisha')),
@@ -357,7 +585,7 @@ class AdminJumuiyaPage extends StatelessWidget {
               labelStyle: nyihaNunito(context, size: 13, weight: FontWeight.w700),
               unselectedLabelStyle: nyihaNunito(context, size: 13),
               tabs: const [
-                Tab(text: 'Chats'),
+                Tab(text: 'Mazungumzo'),
                 Tab(text: 'Wanajamii'),
               ],
             ),
@@ -376,102 +604,381 @@ class AdminJumuiyaPage extends StatelessWidget {
   }
 }
 
-/// Dhibiti mazungumzo ya Jamii na uone ujumbe wa hivi karibuni.
-class AdminJamiiChatsPage extends StatelessWidget {
+/// Dhibiti mazungumzo ya Jamii — mfano wa WhatsApp (ujumbe juu, kinjia chini).
+class AdminJamiiChatsPage extends StatefulWidget {
   const AdminJamiiChatsPage({super.key});
+
+  @override
+  State<AdminJamiiChatsPage> createState() => _AdminJamiiChatsPageState();
+}
+
+class _AdminJamiiChatsPageState extends State<AdminJamiiChatsPage> {
+  final ScrollController _scrollController = ScrollController();
+  int _prevMsgCount = -1;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _showJamiiMoreMenu(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark
+          ? NyihaColors.earth850
+          : NyihaColors.lightSurface,
+      builder: (ctx) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 8,
+              bottom: 20 + MediaQuery.paddingOf(ctx).bottom,
+            ),
+            child: Consumer<AppState>(
+              builder: (context, app, _) {
+                final ax = NyihaColors.accent(ctx);
+                final muted = NyihaColors.onSurfaceMuted(ctx);
+                final onlyAdmins = !app.jamiiCommunityChatMembersCanSend;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Mipangilio', style: nyihaCinzel(ctx, size: 18)),
+                    const SizedBox(height: 16),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'Ni wasimamizi pekee wanaweza kutuma ujumbe',
+                        style: nyihaNunito(ctx, weight: FontWeight.w700),
+                      ),
+                      subtitle: Text(
+                        onlyAdmins
+                            ? 'Wanajamii hawawezi kutuma kwenye Mazungumzo ya Jamii.'
+                            : 'Kila mwanachama anaweza kutuma mazungumzo.',
+                        style: nyihaNunito(ctx, size: 11, color: muted),
+                      ),
+                      value: onlyAdmins,
+                      activeThumbColor: ax,
+                      onChanged: (v) => app.setJamiiCommunityChatMembersCanSend(!v),
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Nambari za msimamizi (wakati mazungumzo yamefungwa)', style: nyihaSectionLabel(ctx)),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Ni simu hizi tu kwenye programu ya wanajamii zinazoruhusiwa kutuma.',
+                      style: nyihaNunito(ctx, size: 11, color: muted),
+                    ),
+                    const SizedBox(height: 12),
+                    ...app.adminTeam.where((a) => a.linkedMemberPhone != null).map(
+                          (a) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: GlassCard(
+                              padding: const EdgeInsets.all(12),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.phone_in_talk_rounded, color: ax, size: 22),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(app.adminSeatLabelFor(a), style: nyihaNunito(ctx, size: 10, weight: FontWeight.w800, color: ax)),
+                                        Text(a.displayName, style: nyihaNunito(ctx, size: 13, weight: FontWeight.w700)),
+                                        Text(a.linkedMemberPhone!, style: nyihaNunito(ctx, size: 12, color: muted)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    if (app.adminTeam.every((a) => a.linkedMemberPhone == null))
+                      Text(
+                        'Hakuna nambari iliyounganishwa.',
+                        style: nyihaNunito(ctx, size: 12, color: muted),
+                      ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Wanachama wanaona mazungumzo haya kwenye Jamii → Mazungumzo.',
+                      style: nyihaNunito(ctx, size: 11, color: muted),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final ax = NyihaColors.accent(context);
     final muted = NyihaColors.onSurfaceMuted(context);
-    final n = app.messagesCommunity.length;
-    final preview = n <= 20 ? app.messagesCommunity : app.messagesCommunity.sublist(n - 20);
+    final surface = Theme.of(context).brightness == Brightness.dark
+        ? NyihaColors.earth900
+        : NyihaColors.lightSurfaceMuted;
+    final messages = app.messagesCommunity;
+    final n = messages.length;
+    if (n != _prevMsgCount) {
+      _prevMsgCount = n;
+      if (n > 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients) {
+            _scrollController.animateTo(
+              _scrollController.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOut,
+            );
+          }
+        });
+      }
+    }
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-      children: [
-        Text('Mazungumzo ya Jamii', style: nyihaCinzel(context, size: 15)),
-        const SizedBox(height: 8),
-        Text(
-          'Wanachama wote wanaona mazungumzo haya kwenye programu ya wanajamii (kichupo Jamii → Mazungumzo).',
-          style: nyihaNunito(context, size: 12, color: muted),
-        ),
-        const SizedBox(height: 16),
-        GlassCard(
-          child: SwitchListTile(
-            title: Text('Wanajamii wanaweza kutuma ujumbe', style: nyihaNunito(context, weight: FontWeight.w700)),
-            subtitle: Text(
-              app.jamiiCommunityChatMembersCanSend
-                  ? 'Kila mwanachama anaweza kuandika, picha, na sauti.'
-                  : 'Imefungwa: ni wasimamizi pekee (nambari zilizoounganishwa na kituo) wanaweza kutuma.',
-              style: nyihaNunito(context, size: 11, color: muted),
-            ),
-            value: app.jamiiCommunityChatMembersCanSend,
-            onChanged: (v) => app.setJamiiCommunityChatMembersCanSend(v),
-          ),
-        ),
-        const SizedBox(height: 20),
-        Text('Nambari za msimamizi zinazoruhusiwa kutuma', style: nyihaSectionLabel(context)),
-        const SizedBox(height: 6),
-        Text(
-          'Wakati mazungumzo yamefungwa, ni simu hizi tu (programu ya wanajamii) zinazoweza kutuma.',
-          style: nyihaNunito(context, size: 11, color: muted),
-        ),
-        const SizedBox(height: 10),
-        ...app.adminTeam.where((a) => a.linkedMemberPhone != null).map(
-              (a) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: GlassCard(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
+    return Scaffold(
+      // Outer [AdminShell] Scaffold already resizes when the keyboard opens.
+      resizeToAvoidBottomInset: false,
+      backgroundColor: surface,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.phone_in_talk_rounded, color: ax, size: 22),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(app.adminSeatLabelFor(a), style: nyihaNunito(context, size: 10, weight: FontWeight.w800, color: ax)),
-                            Text(a.displayName, style: nyihaNunito(context, size: 13, weight: FontWeight.w700)),
-                            Text(a.linkedMemberPhone!, style: nyihaNunito(context, size: 12, color: muted)),
-                          ],
-                        ),
+                      Text('Mazungumzo ya Jamii', style: nyihaCinzel(context, size: 17)),
+                      Text(
+                        'Inbox · ${messages.length} ujumbe',
+                        style: nyihaNunito(context, size: 11, color: muted),
                       ),
                     ],
                   ),
                 ),
-              ),
-            ),
-        if (app.adminTeam.every((a) => a.linkedMemberPhone == null))
-          Text('Hakuna nambari iliyounganishwa (ongeza kwenye msimbo wa backend/konfigi).', style: nyihaNunito(context, size: 12, color: muted)),
-        const SizedBox(height: 20),
-        Text('Hakiki ya ujumbe', style: nyihaCinzel(context, size: 15)),
-        const SizedBox(height: 8),
-        if (app.messagesCommunity.isEmpty)
-          Text('Hakuna ujumbe bado.', style: nyihaNunito(context, size: 13, color: muted))
-        else
-          ...preview.map(
-            (m) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: GlassCard(
-                padding: const EdgeInsets.all(10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('${m.from} · ${m.time}', style: nyihaNunito(context, size: 10, color: muted)),
-                    const SizedBox(height: 4),
-                    Text(
-                      _jamiiChatPreviewLine(m),
-                      maxLines: 4,
-                      overflow: TextOverflow.ellipsis,
-                      style: nyihaNunito(context, size: 12),
-                    ),
-                  ],
+                IconButton(
+                  tooltip: 'Zaidi',
+                  icon: Icon(Icons.more_vert_rounded, color: ax),
+                  onPressed: () => _showJamiiMoreMenu(context),
                 ),
-              ),
+              ],
             ),
           ),
+          Expanded(
+            child: messages.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        'Hakuna ujumbe bado.\nAndika hapa chini kutuma kutoka kwa kituo.',
+                        textAlign: TextAlign.center,
+                        style: nyihaNunito(context, size: 14, color: muted),
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    itemCount: messages.length,
+                    itemBuilder: (context, i) {
+                      final m = messages[i];
+                      return _AdminJamiiBubble(msg: m, accent: ax, muted: muted);
+                    },
+                  ),
+          ),
+          Material(
+            elevation: 8,
+            color: Theme.of(context).brightness == Brightness.dark
+                ? NyihaColors.earth850.withOpacity(0.98)
+                : NyihaColors.lightSurface.withOpacity(0.98),
+            child: SafeArea(
+              top: false,
+              child: CommunityChatComposer(canPost: app.canSendJamiiComposer),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminJamiiBubble extends StatelessWidget {
+  const _AdminJamiiBubble({
+    required this.msg,
+    required this.accent,
+    required this.muted,
+  });
+
+  final ChatMsg msg;
+  final Color accent;
+  final Color muted;
+
+  @override
+  Widget build(BuildContext context) {
+    final isMe = msg.me;
+    final myAv = context.watch<AppState>().user.avatarUrl;
+    final bubbleColor = isMe
+        ? accent.withOpacity(0.22)
+        : (Theme.of(context).brightness == Brightness.dark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.06));
+    final br = BorderRadius.only(
+      topLeft: const Radius.circular(16),
+      topRight: const Radius.circular(16),
+      bottomLeft: Radius.circular(isMe ? 16 : 4),
+      bottomRight: Radius.circular(isMe ? 4 : 16),
+    );
+
+    Widget body() {
+      if (msg.mediaKind == ChatMediaKind.image &&
+          (msg.imageBytes != null || NyihaApi.resolveChatMediaUrl(msg.imageUrl).isNotEmpty)) {
+        return Column(
+          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            Text(
+              isMe ? 'Wewe' : msg.from,
+              style: nyihaNunito(
+                context,
+                size: 11,
+                weight: FontWeight.w700,
+                letterSpacing: 0.15,
+                color: accent.withOpacity(0.9),
+              ),
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: msg.imageBytes != null
+                  ? Image.memory(
+                      msg.imageBytes!,
+                      width: 220,
+                      height: 160,
+                      fit: BoxFit.cover,
+                    )
+                  : Image.network(
+                      NyihaApi.resolveChatMediaUrl(msg.imageUrl),
+                      width: 220,
+                      height: 160,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => SizedBox(
+                        width: 220,
+                        height: 100,
+                        child: Icon(Icons.broken_image_outlined, color: muted),
+                      ),
+                    ),
+            ),
+            if (msg.text.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(msg.text, style: nyihaNunito(context, size: 13)),
+            ],
+            const SizedBox(height: 4),
+            Text(msg.time, style: nyihaNunito(context, size: 10, color: muted)),
+          ],
+        );
+      }
+      if (msg.mediaKind == ChatMediaKind.voice && msg.voiceDurationSec != null) {
+        final path = msg.voiceFilePath;
+        final net = NyihaApi.resolveChatMediaUrl(msg.voiceUrl);
+        final src = (path != null && path.isNotEmpty) ? path : net;
+        if (src.isNotEmpty) {
+          return Column(
+            crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              Text(
+                isMe ? 'Wewe' : msg.from,
+                style: nyihaNunito(
+                  context,
+                  size: 11,
+                  weight: FontWeight.w700,
+                  letterSpacing: 0.15,
+                  color: accent.withOpacity(0.9),
+                ),
+              ),
+              const SizedBox(height: 6),
+              CommunityVoiceNoteBar(
+                audioSource: src,
+                durationSec: msg.voiceDurationSec!,
+                isMe: isMe,
+              ),
+              const SizedBox(height: 4),
+              Text(msg.time, style: nyihaNunito(context, size: 10, color: muted)),
+            ],
+          );
+        }
+      }
+      final line = _jamiiChatPreviewLine(msg);
+      return Column(
+        crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          Text(
+            isMe ? 'Wewe' : msg.from,
+            style: nyihaNunito(
+              context,
+              size: 11,
+              weight: FontWeight.w700,
+              letterSpacing: 0.15,
+              color: accent.withOpacity(0.9),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(line, style: nyihaNunito(context, size: 13)),
+          const SizedBox(height: 4),
+          Text(msg.time, style: nyihaNunito(context, size: 10, color: muted)),
+        ],
+      );
+    }
+
+    final card = Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.82),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: bubbleColor,
+        borderRadius: br,
+        border: Border.all(color: accent.withOpacity(0.12)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.07),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: body(),
+    );
+
+    if (!isMe) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          ChatAvatar(
+            imageUrl: msg.avatarUrl,
+            fallbackEmoji: msg.emoji ?? '👤',
+            radius: 16,
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Align(alignment: Alignment.centerLeft, child: card)),
+        ],
+      );
+    }
+
+    final merged = msg.avatarUrl?.trim();
+    final meUrl = (merged != null && merged.isNotEmpty) ? merged : myAv;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        Expanded(child: Align(alignment: Alignment.centerRight, child: card)),
+        const SizedBox(width: 8),
+        ChatAvatar(imageUrl: meUrl, fallbackEmoji: '🛡️', radius: 16),
       ],
     );
   }
@@ -507,7 +1014,7 @@ class AdminCommercePage extends StatelessWidget {
                 Text('Ombi: ${p.id}', style: nyihaNunito(context, size: 12, weight: FontWeight.w700)),
                 const SizedBox(height: 6),
                 Text(
-                  'Tiki ${p.tickCount} · TZS ${p.tickCount * AppState.tickPriceTzs}',
+                  'Tiki ${p.tickCount} · TZS ${p.tickCount * context.read<AppState>().tickPriceTzsSetting}',
                   style: nyihaNunito(context, size: 14),
                 ),
                 const SizedBox(height: 12),

@@ -1,3 +1,4 @@
+import path from "path";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -34,6 +35,14 @@ export function createApp() {
   app.use("/health", healthRouter);
 
   const v1 = "/api/v1";
+  app.use(
+    `${v1}/chat/media`,
+    express.static(path.join(process.cwd(), "uploads", "chat"), { index: false }),
+  );
+  app.use(
+    `${v1}/me/media`,
+    express.static(path.join(process.cwd(), "uploads", "avatars"), { index: false }),
+  );
   app.use(`${v1}/auth`, authRouter);
   app.use(`${v1}/me`, memberMeRouter);
   app.use(`${v1}/products`, productsRouter);

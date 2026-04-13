@@ -5,3 +5,4 @@ dist
 .env.railway
 *.log
 .DS_Store
+uploads/

@@ -10,7 +10,7 @@ import '../../widgets/kente_strip.dart';
 import '../../widgets/nyiha_buttons.dart';
 import '../../widgets/nyiha_toast.dart';
 
-/// Secure entry to the administrator console (demo PIN — replace with backend auth).
+/// Secure entry to the administrator console (API: email + password).
 class AdminLoginScreen extends StatefulWidget {
   const AdminLoginScreen({super.key});
 
@@ -19,38 +19,36 @@ class AdminLoginScreen extends StatefulWidget {
 }
 
 class _AdminLoginScreenState extends State<AdminLoginScreen> {
-  final _email = TextEditingController(text: 'mkuu@nyiha.app');
-  final _pin = TextEditingController(text: '0000');
+  final _email = TextEditingController(text: 'adamadministrator@nyiha.app');
+  final _password = TextEditingController();
   bool _busy = false;
   bool _obscure = true;
 
   @override
   void dispose() {
     _email.dispose();
-    _pin.dispose();
+    _password.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     final e = _email.text.trim();
-    final p = _pin.text.trim();
+    final p = _password.text;
     if (e.isEmpty || p.isEmpty) {
-      showNyihaToast(context, 'Jaza barua pepe na PIN.');
+      showNyihaToast(context, 'Jaza barua pepe na nenosiri.');
       return;
     }
     setState(() => _busy = true);
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
     final app = context.read<AppState>();
-    final ok = app.loginAdmin(email: e, pin: p);
-    setState(() => _busy = false);
+    final ok = await app.loginAdminApi(e, p);
     if (!mounted) return;
-    if (ok) {
-      app.setScreen(AppScreen.adminMain);
-      showNyihaToast(context, 'Karibu, ${app.adminSession!.displayName}.');
-    } else {
-      showNyihaToast(context, 'Barua pepe au PIN si sahihi.');
+    setState(() => _busy = false);
+    if (!ok) {
+      showNyihaToast(context, app.lastApiError ?? 'Barua pepe au nenosiri si sahihi.');
+      return;
     }
+    app.setScreen(AppScreen.adminMain);
+    showNyihaToast(context, 'Karibu, ${app.adminSession!.displayName}.');
   }
 
   @override
@@ -124,7 +122,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        'Mkuu mmoja na wasaidizi wawili · dhibiti jamii, malipo na maudhui',
+                        'Ingia kwa akaunti ya msimamizi (seva)',
                         textAlign: TextAlign.center,
                         style: nyihaNunito(context, size: 13, color: NyihaColors.cream.withOpacity(0.65)),
                       ),
@@ -143,25 +141,25 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                             TextField(
                               controller: _email,
                               keyboardType: TextInputType.emailAddress,
+                              autocorrect: false,
                               style: nyihaNunito(context, color: NyihaColors.onSurface(context)),
                               decoration: authInputDecoration(
                                 context,
-                                hintText: 'mkuu@nyiha.app',
+                                hintText: 'adamadministrator@nyiha.app',
                                 prefixIcon: Icon(Icons.alternate_email_rounded, color: ax),
                               ),
                             ),
                             const SizedBox(height: 20),
-                            Text('PIN', style: nyihaFieldLabel(context)),
+                            Text('NENOSIRI', style: nyihaFieldLabel(context)),
                             const SizedBox(height: 10),
                             TextField(
-                              controller: _pin,
+                              controller: _password,
                               obscureText: _obscure,
-                              keyboardType: TextInputType.number,
                               style: nyihaNunito(context, color: NyihaColors.onSurface(context)),
                               decoration: authInputDecoration(
                                 context,
-                                hintText: '••••',
-                                prefixIcon: Icon(Icons.pin_rounded, color: ax),
+                                hintText: '••••••••',
+                                prefixIcon: Icon(Icons.lock_rounded, color: ax),
                                 suffixIcon: IconButton(
                                   icon: Icon(
                                     _obscure ? Icons.visibility_rounded : Icons.visibility_off_rounded,

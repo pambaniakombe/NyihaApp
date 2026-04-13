@@ -26,9 +26,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       });
       if (_progress >= 1) {
         _timer?.cancel();
-        Future.delayed(const Duration(milliseconds: 280), () {
+        Future.delayed(const Duration(milliseconds: 280), () async {
           if (!mounted) return;
-          context.read<AppState>().setScreen(AppScreen.onboarding);
+          await context.read<AppState>().bootstrapSession();
         });
       }
     });
@@ -115,7 +115,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'JAMII · UTAMADUNI · UMOJA',
+                  'KUHAYA KWE KUMWINYU',
                   style: nyihaNunito(
                     context,
                     size: 12,

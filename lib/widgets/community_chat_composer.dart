@@ -51,8 +51,14 @@ class _CommunityChatComposerState extends State<CommunityChatComposer> {
         return;
       }
       final cap = _ctrl.text.trim();
-      context.read<AppState>().sendCommunityImage(bytes, caption: cap);
-      _ctrl.clear();
+      final app = context.read<AppState>();
+      final ok = await app.sendCommunityImage(bytes, caption: cap);
+      if (!mounted) return;
+      if (ok) {
+        _ctrl.clear();
+      } else {
+        showNyihaToast(context, app.lastApiError ?? 'Haikuwezekana kutuma picha.');
+      }
     } catch (_) {
       if (mounted) showNyihaToast(context, 'Haikuwezekana kuchagua picha.');
     }
@@ -77,7 +83,10 @@ class _CommunityChatComposerState extends State<CommunityChatComposer> {
         var sec = 0;
         if (start != null) sec = DateTime.now().difference(start).inSeconds;
         if (path != null && sec >= 1 && mounted) {
-          context.read<AppState>().sendCommunityVoice(filePath: path, durationSec: sec.clamp(1, 3600));
+          final app = context.read<AppState>();
+          final ok = await app.sendCommunityVoice(filePath: path, durationSec: sec.clamp(1, 3600));
+          if (!mounted) return;
+          if (!ok) showNyihaToast(context, app.lastApiError ?? 'Haikuwezekana kutuma sauti.');
         } else if (mounted && path != null && sec < 1) {
           showNyihaToast(context, 'Rekodi ni fupi mno.');
         }
@@ -104,16 +113,22 @@ class _CommunityChatComposerState extends State<CommunityChatComposer> {
     }
   }
 
-  void _sendText() {
+  Future<void> _sendText() async {
     if (!widget.canPost) {
       showNyihaToast(context, 'Mazungumzo yamesitishwa na wasimamizi.');
       return;
     }
     final t = _ctrl.text.trim();
     if (t.isEmpty) return;
-    context.read<AppState>().sendCommunityMessage(t);
-    _ctrl.clear();
-    setState(() {});
+    final app = context.read<AppState>();
+    final ok = await app.sendCommunityMessage(t);
+    if (!mounted) return;
+    if (ok) {
+      _ctrl.clear();
+      setState(() {});
+    } else {
+      showNyihaToast(context, app.lastApiError ?? 'Haikuwezekana kutuma ujumbe.');
+    }
   }
 
   @override

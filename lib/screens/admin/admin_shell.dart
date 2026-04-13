@@ -62,10 +62,10 @@ class AdminShell extends StatelessWidget {
                       icon: const Icon(Icons.logout_rounded),
                       color: NyihaColors.cream.withOpacity(0.85),
                       tooltip: 'Toka',
-                      onPressed: () {
-                        context.read<AppState>()
-                          ..logoutAdmin()
-                          ..setScreen(AppScreen.adminLogin);
+                      onPressed: () async {
+                        final app = context.read<AppState>();
+                        await app.logoutAdmin();
+                        app.setScreen(AppScreen.adminLogin);
                       },
                     ),
                     Expanded(

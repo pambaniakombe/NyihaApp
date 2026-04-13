@@ -21,30 +21,86 @@ adminConsoleRouter.get("/members", async (_req, res) => {
       ticksPaid: true,
       status: true,
       username: true,
+      balance: true,
+      adminProfileNote: true,
+      adminWarning: true,
     },
   });
+  const settings = await prisma.appSettings.findUnique({ where: { id: 1 } });
+  const reqAnnual = settings?.ticksRequiredAnnual ?? 24;
   const withEmoji = users.map((u) => ({
     ...u,
     emoji: "👤",
     ticks: u.ticksPaid,
+    ticksRequiredAnnual: reqAnnual,
+    ticksOwed: Math.max(0, reqAnnual - u.ticksPaid),
+    hasPaidAllTicks: u.ticksPaid >= reqAnnual,
   }));
   res.json(withEmoji);
 });
 
-const memberStatusBody = z.object({
-  status: z.enum(["pending", "approved", "suspended"]),
-});
+const memberPatchBody = z
+  .object({
+    status: z.enum(["pending", "approved", "suspended"]).optional(),
+    ticksPaid: z.coerce.number().int().min(0).max(999999).optional(),
+    /// Outstanding debt in TZS (deni).
+    balance: z.coerce.number().int().min(0).max(999999999).optional(),
+    adminProfileNote: z.string().max(8000).optional(),
+    adminWarning: z.string().max(4000).optional(),
+  })
+  .refine(
+    (d) =>
+      d.status !== undefined ||
+      d.ticksPaid !== undefined ||
+      d.balance !== undefined ||
+      d.adminProfileNote !== undefined ||
+      d.adminWarning !== undefined,
+    { message: "Provide at least one field to update" },
+  );
 
 adminConsoleRouter.patch("/members/:id", async (req, res) => {
   const id = String(req.params.id);
-  const parsed = memberStatusBody.safeParse(req.body);
+  const parsed = memberPatchBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
+    const data: {
+      status?: "pending" | "approved" | "suspended";
+      ticksPaid?: number;
+      balance?: number;
+      adminProfileNote?: string;
+      adminWarning?: string;
+    } = {};
+    if (parsed.data.status !== undefined) data.status = parsed.data.status;
+    if (parsed.data.ticksPaid !== undefined) data.ticksPaid = parsed.data.ticksPaid;
+    if (parsed.data.balance !== undefined) data.balance = parsed.data.balance;
+    if (parsed.data.adminProfileNote !== undefined) data.adminProfileNote = parsed.data.adminProfileNote;
+    if (parsed.data.adminWarning !== undefined) data.adminWarning = parsed.data.adminWarning;
     const u = await prisma.user.update({
       where: { id },
-      data: { status: parsed.data.status },
+      data,
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        location: true,
+        ticksPaid: true,
+        status: true,
+        username: true,
+        balance: true,
+        adminProfileNote: true,
+        adminWarning: true,
+      },
     });
-    res.json(u);
+    const settings = await prisma.appSettings.findUnique({ where: { id: 1 } });
+    const reqAnnual = settings?.ticksRequiredAnnual ?? 24;
+    res.json({
+      ...u,
+      emoji: "👤",
+      ticks: u.ticksPaid,
+      ticksRequiredAnnual: reqAnnual,
+      ticksOwed: Math.max(0, reqAnnual - u.ticksPaid),
+      hasPaidAllTicks: u.ticksPaid >= reqAnnual,
+    });
   } catch {
     res.status(404).json({ error: "Member not found" });
   }
@@ -63,7 +119,11 @@ adminConsoleRouter.post("/signups/:id/approve", async (req, res) => {
   try {
     const p = await prisma.pendingSignup.findUnique({ where: { id: signupId } });
     if (!p || p.resolved) return res.status(404).json({ error: "Request not found" });
-    const user = await prisma.user.findUnique({ where: { phone: p.phone } });
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [{ phone: p.phone }, { username: p.username }],
+      },
+    });
     if (user) {
       await prisma.user.update({
         where: { id: user.id },
@@ -77,6 +137,32 @@ adminConsoleRouter.post("/signups/:id/approve", async (req, res) => {
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: "Approve failed" });
+  }
+});
+
+adminConsoleRouter.post("/signups/:id/reject", async (req, res) => {
+  const signupId = String(req.params.id);
+  try {
+    const p = await prisma.pendingSignup.findUnique({ where: { id: signupId } });
+    if (!p || p.resolved) return res.status(404).json({ error: "Request not found" });
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [{ phone: p.phone }, { username: p.username }],
+      },
+    });
+    if (user) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { status: "suspended" },
+      });
+    }
+    await prisma.pendingSignup.update({
+      where: { id: p.id },
+      data: { resolved: true },
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Reject failed" });
   }
 });
 
@@ -126,6 +212,33 @@ adminConsoleRouter.post("/admins", requireMainAdmin, async (req: AuthedRequest, 
   res.status(201).json(a);
 });
 
+const adminSendBody = z
+  .object({
+    text: z.preprocess((val) => (val == null ? "" : String(val)), z.string()),
+    timeLabel: z.string().min(1),
+    emoji: z.string().optional(),
+    mediaKind: z.enum(["text", "image", "voice"]).optional(),
+    imageUrl: z.string().optional(),
+    voiceUrl: z.string().optional(),
+    voiceDurationSec: z.coerce.number().int().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const mk = data.mediaKind ?? "text";
+    if (mk === "text") {
+      if (!data.text.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "text required for text messages" });
+      }
+    } else if (mk === "image") {
+      if (!data.imageUrl?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "imageUrl required" });
+      }
+    } else if (mk === "voice") {
+      if (!data.voiceUrl?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "voiceUrl required" });
+      }
+    }
+  });
+
 adminConsoleRouter.post(
   "/chat/:channel",
   async (req: AuthedRequest, res) => {
@@ -134,22 +247,22 @@ adminConsoleRouter.post(
     const admin = await prisma.adminUser.findUnique({ where: { id: req.adminId! } });
     if (!admin) return res.status(401).json({ error: "Admin not found" });
 
-    const sendBody = z.object({
-      text: z.string().min(1),
-      timeLabel: z.string().min(1),
-      emoji: z.string().optional(),
-    });
-    const parsed = sendBody.safeParse(req.body);
+    const parsed = adminSendBody.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
+    const mk = (parsed.data.mediaKind ?? "text") as ChatMediaKind;
+    const rawText = parsed.data.text.trim();
     const msg = await prisma.chatMessage.create({
       data: {
         channel: ch.data as ChatChannel,
         fromLabel: admin.displayName,
-        text: parsed.data.text,
+        text: rawText,
         timeLabel: parsed.data.timeLabel,
         emoji: parsed.data.emoji,
-        mediaKind: ChatMediaKind.text,
+        mediaKind: mk,
+        imageUrl: parsed.data.imageUrl?.trim() || null,
+        voiceUrl: parsed.data.voiceUrl?.trim() || null,
+        voiceDurationSec: parsed.data.voiceDurationSec ?? null,
         isFromMe: false,
       },
     });
