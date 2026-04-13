@@ -14,12 +14,26 @@ flutter pub get
 flutter run
 ```
 
+### Production API (Railway)
+
+- **Public URL:** [https://nyihaapp-production-4ca7.up.railway.app](https://nyihaapp-production-4ca7.up.railway.app)
+- **REST base:** `https://nyihaapp-production-4ca7.up.railway.app/api/v1`
+- **Health:** `https://nyihaapp-production-4ca7.up.railway.app/health`
+- Railway sets **`PORT`** inside the container (often `8080`); the Node app uses `process.env.PORT` — you do not open port 8080 in the Flutter app; use **HTTPS** on the `.up.railway.app` hostname only.
+
+Flutter reads the default base URL from `lib/config/api_config.dart`. For a local backend:
+
+```bash
+flutter run --dart-define=API_BASE_URL=http://127.0.0.1:3000
+```
+
 ## Project layout
 
 - `lib/theme/` — colors and typography from the HTML design
 - `lib/widgets/` — glass cards, kente strip, gold buttons, toast
 - `lib/providers/` — app state (user, messages, polls, theme)
 - `lib/screens/` — splash, onboarding, auth, main shell + tabs
+- `lib/config/api_config.dart` — production API base URL (`kApiBaseUrl`) for HTTP client wiring
 - `backend/` — Node.js API (Express + Prisma + PostgreSQL). The repo root `package.json` uses **npm workspaces** so [Railway](https://railway.com) Railpack can detect Node without setting a subfolder: **Build** = `npm run build`, **Start** = `npm start` (runs migrations then the server). Add a **PostgreSQL** plugin for `DATABASE_URL`, set **`JWT_SECRET`**, and see `backend/.env.example`. (You can still set **Root Directory** to `backend` instead if you prefer.)
 
 The standalone admin Flutter app lives in a separate checkout (`admins/`); it is **not** included in this repository.
