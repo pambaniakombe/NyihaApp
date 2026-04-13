@@ -3,6 +3,11 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
+/** Flutter Color ARGB → signed int32 for PostgreSQL INT4 (unsigned ARGB does not fit in INT4). */
+function colorArgb(hex: number): number {
+  return hex | 0;
+}
+
 async function main() {
   const pinHash = await bcrypt.hash("0000", 10);
   await prisma.adminUser.upsert({
@@ -37,7 +42,7 @@ async function main() {
         name: "Shati la Nyiha",
         priceLabel: "TZS 25,000",
         emoji: "👕",
-        color: 0xffd4a017,
+        color: colorArgb(0xffd4a017),
         imageUrl: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=900&q=80",
         sortOrder: 0,
       },
@@ -45,7 +50,7 @@ async function main() {
         name: "Kofia ya Nyiha",
         priceLabel: "TZS 12,000",
         emoji: "🧢",
-        color: 0xffc45e1a,
+        color: colorArgb(0xffc45e1a),
         imageUrl: "https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=900&q=80",
         sortOrder: 1,
       },
@@ -53,7 +58,7 @@ async function main() {
         name: "Mkoba wa Ngozi",
         priceLabel: "TZS 45,000",
         emoji: "👜",
-        color: 0xff2d8a4e,
+        color: colorArgb(0xff2d8a4e),
         imageUrl: "https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=900&q=80",
         sortOrder: 2,
       },
@@ -61,7 +66,7 @@ async function main() {
         name: "Kitenge cha Nyiha",
         priceLabel: "TZS 18,000",
         emoji: "🎨",
-        color: 0xff1a5fa8,
+        color: colorArgb(0xff1a5fa8),
         imageUrl: "https://images.unsplash.com/photo-1617127365659-c47fa864d8bc?w=900&q=80",
         sortOrder: 3,
       },
@@ -69,7 +74,7 @@ async function main() {
         name: "Kikombe cha Kahawa",
         priceLabel: "TZS 8,000",
         emoji: "☕",
-        color: 0xff8b6914,
+        color: colorArgb(0xff8b6914),
         imageUrl: "https://images.unsplash.com/photo-1511920170033-f8396924c348?w=900&q=80",
         sortOrder: 4,
       },
@@ -77,7 +82,7 @@ async function main() {
         name: "Daftari la Nyiha",
         priceLabel: "TZS 5,000",
         emoji: "📔",
-        color: 0xff7c3d0c,
+        color: colorArgb(0xff7c3d0c),
         imageUrl: "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=900&q=80",
         sortOrder: 5,
       },
