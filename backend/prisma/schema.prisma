@@ -1,0 +1,234 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MemberStatus {
+  pending
+  approved
+  suspended
+}
+
+enum AdminRole {
+  main
+  helper
+}
+
+enum ChatChannel {
+  community
+  admin
+  seller
+}
+
+enum ChatMediaKind {
+  text
+  image
+  voice
+}
+
+enum OrderStatus {
+  inasubiri_malipo
+  confirmed
+  cancelled
+}
+
+enum TickPaymentPhase {
+  waitingMoney
+  waitingAdminApproval
+}
+
+model User {
+  id           String        @id @default(cuid())
+  phone        String        @unique
+  passwordHash String
+  name         String
+  location     String
+  children     Int           @default(0)
+  status       MemberStatus  @default(pending)
+  ticksPaid    Int           @default(0)
+  balance      Int           @default(0)
+  username     String        @unique
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  orders       Order[]
+  chatMessages ChatMessage[] @relation("UserMessages")
+}
+
+model AdminUser {
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  passwordHash       String
+  displayName        String
+  role               AdminRole
+  linkedMemberPhone  String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+model Product {
+  id         String   @id @default(cuid())
+  name       String
+  priceLabel String
+  emoji      String
+  color      Int
+  imageUrl   String
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  orders Order[]
+}
+
+model Order {
+  id           String      @id @default(cuid())
+  userId       String?
+  productId    String?
+  productName  String
+  priceLabel   String
+  size         String
+  rangi        String
+  idadi        Int
+  buyerName    String
+  status       OrderStatus @default(inasubiri_malipo)
+  placedAt     DateTime    @default(now())
+
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([placedAt])
+}
+
+model CommunityPost {
+  id           String   @id @default(cuid())
+  authorLabel  String
+  headline     String
+  body         String
+  dateLabel    String
+  tag          String
+  imageUrls    Json     @default("[]")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  reactions PostReaction[]
+}
+
+model PostReaction {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  kind      String
+  createdAt DateTime @default(now())
+
+  post CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, kind])
+  @@index([postId])
+}
+
+model JamiiEvent {
+  id        String   @id @default(cuid())
+  title     String
+  desc      String
+  date      String
+  tag       String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ChatMessage {
+  id               String        @id @default(cuid())
+  channel          ChatChannel
+  fromLabel        String
+  text             String
+  timeLabel        String
+  isFromMe         Boolean       @default(false)
+  emoji            String?
+  mediaKind        ChatMediaKind @default(text)
+  imageUrl         String?
+  voiceUrl         String?
+  voiceDurationSec Int?
+  userId           String?
+  createdAt        DateTime      @default(now())
+
+  user User? @relation("UserMessages", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([channel, createdAt])
+}
+
+model PendingSignup {
+  id                   String   @id @default(cuid())
+  fullName             String
+  phone                String
+  location             String
+  username             String
+  children             Int
+  registrationFeePaid  Boolean  @default(false)
+  detailLines          String   @default("")
+  submittedAt          DateTime @default(now())
+  resolved             Boolean  @default(false)
+
+  @@index([resolved])
+}
+
+model PendingTickPayment {
+  id          String            @id @default(cuid())
+  userId      String
+  tickCount   Int
+  phase       TickPaymentPhase  @default(waitingMoney)
+  submittedAt DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([userId])
+}
+
+model Poll {
+  id        String   @id @default(cuid())
+  question  String
+  options   Json
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  votes PollVote[]
+}
+
+model PollVote {
+  id        String   @id @default(cuid())
+  pollId    String
+  userId    String
+  optionIdx Int
+  createdAt DateTime @default(now())
+
+  poll Poll @relation(fields: [pollId], references: [id], onDelete: Cascade)
+
+  @@unique([pollId, userId])
+  @@index([pollId])
+}
+
+model AppSettings {
+  id                               Int     @id @default(1)
+  customerCarePhone                String  @default("+255 700 000 111")
+  customerCareWhatsApp             String  @default("+255 700 000 222")
+  customerCareHoursLabel           String  @default("Jumatatu–Ijumaa · 08:00–18:00")
+  jamiiCommunityChatMembersCanSend Boolean @default(true)
+  showUserTabHome                  Boolean @default(true)
+  showUserTabJamii                 Boolean @default(true)
+  showUserTabDuka                  Boolean @default(true)
+  showUserTabProfile               Boolean @default(true)
+  showJamiiMazungumzo              Boolean @default(true)
+  showJamiiAdminChat               Boolean @default(true)
+  showJamiiWanachama               Boolean @default(true)
+  showJamiiMatukio                 Boolean @default(true)
+  showJamiiMkeka                   Boolean @default(true)
+  showJamiiKura                    Boolean @default(true)
+  ticksRequiredAnnual              Int     @default(24)
+  tickPriceTzs                     Int     @default(2000)
+  updatedAt                        DateTime @updatedAt
+}

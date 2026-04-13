@@ -1,0 +1,6 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+# Runs migrations then the compiled server (set Railway Root Directory to `backend` if repo is monorepo)
+startCommand = "npx prisma migrate deploy && node dist/index.js"
