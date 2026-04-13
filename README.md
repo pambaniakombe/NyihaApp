@@ -1,15 +1,15 @@
-# Nyiha Society (Flutter)
+# NyihaApp
 
-Flutter rewrite of the Nyiha app, aligned with `NyihaApp.html` (earth/gold theme, Cinzel + Nunito, flows: splash → onboarding → register → terms → payment → main, or login).
+Member Flutter app plus Node.js API. Aligned with `NyihaApp.html` (earth/gold theme, Cinzel + Nunito, flows: splash → onboarding → register → terms → payment → main, or login).
 
 ## Requirements
 
 - [Flutter SDK](https://docs.flutter.dev/get-started/install) 3.16+
+- Node 20+ for `backend/` (local API development)
 
-## Run
+## Run (Flutter)
 
 ```bash
-cd NyihaSocietyFlutter
 flutter pub get
 flutter run
 ```
